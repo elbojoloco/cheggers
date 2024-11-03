@@ -50,6 +50,12 @@ function getCookie(name) {
   if (parts.length === 2) return parts.pop().split(';').shift()
 }
 
+const addHtmlToBody = html => {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  document.body.appendChild(div)
+}
+
 const auth = 'Bearer ' + decodeURI(getCookie('session_token'))
 
 let username = ''
@@ -83,226 +89,272 @@ const sendMessage = message => {
   })
 }
 
-function onlyUnique(value, index, array) {
-  return array.indexOf(value) === index
+const cheggersFlashbang = () => {
+  for (let i = 0; i < 10; i++) {
+    sendMessage(
+      `${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote}`
+    )
+  }
 }
 
-let words = []
+addHtmlToBody(`
+  <div class="cheggers">
+    <h1>Cheggers</h1>
 
-const collectWords = data => {
-  if (
-    data.content.match(/emote:/gm) === null &&
-    data.sender.username !== username
-  ) {
-    // Grab words from data.content as array and add to words with current timestamp per word
+    <button onclick="() => {}" disabled title="Coming soon">Send random TTS</button>
 
-    const w = data.content.trim().split(/\s+/)
+    <button onclick="cheggersFlashbang()">Cheggers flashbang</button>
+  </div>
 
-    if (w.length) {
-      words = [...words, ...w.map(word => [Date.now(), word])]
+  <style>
+    .cheggers {
+      position: fixed;
+      left: 10px;
+      bottom: 10px;
+      background-color: #000;
+      color: #fff;
+      padding: 10px;
+      z-index: 9999;
     }
-  }
-}
 
-// const voices = ['arnold', 'phil', 'kermit', 'duke', 'trump', 'spongebob']
-const voices = ['elmo', 'spongebob']
-const p = ['!', '?', '.']
-
-const sendRandomTts = () => {
-  console.log('words: ', words)
-
-  console.log(
-    'filtered: ',
-    words.filter(w => w[0] >= Date.now() - 120000)
-  )
-
-  let onlyWords = words
-    .map(w => w[1])
-    // .filter(onlyUnique)
-    .filter(w => w.match(/^\!/gm) === null)
-    .filter(w => w.match(/^v=/gm) === null)
-    .filter(w => w.match(/"/gm) === null)
-    .filter(w => w.match(/^\(/gm) === null)
-    .filter(w => w.match(/\d+s\.$/gm) === null)
-    .filter(w => w.match(/\d+m$/gm) === null)
-    .filter(w => w.match(/\)$/gm) === null)
-    .filter(w => w.match(/^#/gm) === null)
-    .filter(w => w.match(/^@/gm) === null)
-
-  const shuffled = onlyWords.sort(() => 0.5 - Math.random())
-  const selected = shuffled.slice(0, Math.round(Math.random() * 20 + 20))
-
-  const voice = voices[Math.floor(Math.random() * voices.length)]
-
-  const message = `!${voice} ${selected.join(' ')}${
-    p[Math.floor(Math.random() * p.length)]
-  }`
-
-  console.log(message)
-
-  sendMessage(message)
-}
-
-setTimeout(() => {
-  sendRandomTts()
-
-  setInterval(sendRandomTts, 75000)
-}, 25000)
-
-setInterval(() => {
-  words = words.filter(w => w[0] >= Date.now() - 200000)
-
-  console.log(
-    words
-      .map(w => w[1])
-      // .filter(onlyUnique)
-      .filter(w => w.match(/^\!/gm) === null)
-      .filter(w => w.match(/^v=/gm) === null)
-      .filter(w => w.match(/"/gm) === null)
-      .filter(w => w.match(/^\(/gm) === null)
-      .filter(w => w.match(/\d+s\.$/gm) === null)
-      .filter(w => w.match(/\d+m$/gm) === null)
-      .filter(w => w.match(/\)$/gm) === null)
-      .filter(w => w.match(/^#/gm) === null)
-      .filter(w => w.match(/^@/gm) === null)
-  )
-}, 10000)
-
-channel.bind(messageEvent, collectWords)
-
-const respondToPoo = data => {
-  if (data.content === 'poo' || data.content === 'Poo') {
-    sendMessage('Wee')
-  }
-}
-
-const respondToKeith = data => {
-  if (data.content === 'keith' || data.content === 'Keith') {
-    sendMessage('Cheggers')
-  }
-}
-
-const respondToPiss = data => {
-  if (data.content === 'piss' || data.content === 'Piss') {
-    sendMessage('Shit')
-  }
-}
-
-channel.bind(messageEvent, data => {
-  respondToPoo(data)
-  respondToKeith(data)
-  respondToPiss(data)
-})
-
-const spammerBoard = {
-  Vypyr: 10,
-  KetlordOfLiverpool: 20,
-  madbaddog05: 34659,
-  el_bojo_loco: 3385,
-  Lattz: 1927,
-  Vetionarian: 463,
-  alienPPC: 1436,
-  glogging: 1186,
-  Deep_Ez: 65,
-  bigapz: 300,
-  PrimedOrange: 102,
-  '6ustin': 92,
-  neckbeard_aficionado: 143,
-  Cheggsta: 276,
-  Hunty93: 67,
-  DynodazeDanny: 39,
-  RgsRs: 15753,
-  Hexical: 196,
-  HolliaU: 40,
-  benjamintrnt: 149,
-  zSK98: 13,
-  SmashF13ND: 317,
-  Slash4646: 70,
-  TyroneCheggers: 5,
-  shrimpy94: 25,
-  mr_cheggies: 10,
-  Ego6Maguire: 25,
-  Dannyth96: 5,
-  azzy2022: 42,
-  J4M3SP: 97,
-  alfzawg: 7814,
-  jackboijack2: 20,
-  swordandland: 11,
-  BIG_McQuill: 5,
-  herbito: 4,
-  Rich_xp: 53,
-  Endorfinz: 5,
-  Ajajajk: 5,
-  GrossGoreKebabAli: 203,
-  BarbieXL: 5,
-  Luekk: 297,
-  Vx_T: 225,
-  KQ_T: 215,
-  IronScott_1: 5,
-  Bigtotes: 20,
-  CelestiaVegas: 5,
-  teeayyderulo: 35,
-  Mr_Mo_Mentum: 103,
-  cuckywucky: 14,
-  Spooke1: 5,
-  HeistZC: 5,
-  Purplemauled: 82,
-  Branyx: 6,
-  Sande: 50,
-  v3rzx: 10,
-  haynes: 5,
-  Jooshie: 13,
-  OdacIock: 74,
-  Goopwhacker: 12,
-  soulsacrifice: 91,
-  Yoey1: 139,
-  CountOnCrypto: 1454,
-  HandsomeBillyOnKet: 244,
-  Swampoe: 2,
-  angryspe: 16,
-  SumAssHole: 5,
-  ImCamelphat: 10,
-  Nevi_728: 21,
-  CrabStickSteve: 5,
-  Dynamistu: 9,
-  iZAjz: 247,
-  Vintaqe_Osrs: 19,
-  GWJRS: 4,
-  xWhist: 14,
-  name1name2: 5,
-  Jeremy_Vine: 74,
-  YasinW: 10,
-  Stxkesey: 40,
-  Skutch223: 15,
-  Loolsy: 10,
-  seanhnn: 40,
-  edshotmachine: 5,
-  zatsgrazyoffers: 5,
-  '666RSI': 1,
-  '96migrant': 13,
-  nutcrackerr: 8,
-  Gaz_T: 97,
-  JonJames: 12,
-  ven_5: 25,
-  Atychiphobiaa: 5,
-  snorzi: 11,
-}
-
-const collectCheggersSpam = data => {
-  if (data.content.match(/emote:2836117:grossgoreCheggers/g)) {
-    const user = data.sender.username
-
-    const count = data.content.match(/emote:2836117:grossgoreCheggers/g).length
-
-    if (spammerBoard[user]) {
-      spammerBoard[user] += count
-    } else {
-      spammerBoard[user] = count
+    .cheggers button {
+      display: block;
+      margin-bottom: 10px;
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #fff;
+      color: #000;
+      border: none;
     }
-  }
 
-  console.log(JSON.stringify(spammerBoard, null, 2))
-}
+    .cheggers button:disabled {
+      background-color: #ccc;
+      color: #000;
+      cursor: not-allowed;
+    }
+  </style>
+`)
+
+// function onlyUnique(value, index, array) {
+//   return array.indexOf(value) === index
+// }
+
+// let words = []
+
+// const collectWords = data => {
+//   if (
+//     data.content.match(/emote:/gm) === null &&
+//     data.sender.username !== username
+//   ) {
+//     // Grab words from data.content as array and add to words with current timestamp per word
+
+//     const w = data.content.trim().split(/\s+/)
+
+//     if (w.length) {
+//       words = [...words, ...w.map(word => [Date.now(), word])]
+//     }
+//   }
+// }
+
+// // const voices = ['arnold', 'phil', 'kermit', 'duke', 'trump', 'spongebob']
+// const voices = ['elmo', 'spongebob']
+// const p = ['!', '?', '.']
+
+// const sendRandomTts = () => {
+//   console.log('words: ', words)
+
+//   console.log(
+//     'filtered: ',
+//     words.filter(w => w[0] >= Date.now() - 120000)
+//   )
+
+//   let onlyWords = words
+//     .map(w => w[1])
+//     // .filter(onlyUnique)
+//     .filter(w => w.match(/^\!/gm) === null)
+//     .filter(w => w.match(/^v=/gm) === null)
+//     .filter(w => w.match(/"/gm) === null)
+//     .filter(w => w.match(/^\(/gm) === null)
+//     .filter(w => w.match(/\d+s\.$/gm) === null)
+//     .filter(w => w.match(/\d+m$/gm) === null)
+//     .filter(w => w.match(/\)$/gm) === null)
+//     .filter(w => w.match(/^#/gm) === null)
+//     .filter(w => w.match(/^@/gm) === null)
+
+//   const shuffled = onlyWords.sort(() => 0.5 - Math.random())
+//   const selected = shuffled.slice(0, Math.round(Math.random() * 20 + 20))
+
+//   const voice = voices[Math.floor(Math.random() * voices.length)]
+
+//   const message = `!${voice} ${selected.join(' ')}${
+//     p[Math.floor(Math.random() * p.length)]
+//   }`
+
+//   console.log(message)
+
+//   sendMessage(message)
+// }
+
+// setTimeout(() => {
+//   sendRandomTts()
+
+//   setInterval(sendRandomTts, 75000)
+// }, 25000)
+
+// setInterval(() => {
+//   words = words.filter(w => w[0] >= Date.now() - 200000)
+
+//   console.log(
+//     words
+//       .map(w => w[1])
+//       // .filter(onlyUnique)
+//       .filter(w => w.match(/^\!/gm) === null)
+//       .filter(w => w.match(/^v=/gm) === null)
+//       .filter(w => w.match(/"/gm) === null)
+//       .filter(w => w.match(/^\(/gm) === null)
+//       .filter(w => w.match(/\d+s\.$/gm) === null)
+//       .filter(w => w.match(/\d+m$/gm) === null)
+//       .filter(w => w.match(/\)$/gm) === null)
+//       .filter(w => w.match(/^#/gm) === null)
+//       .filter(w => w.match(/^@/gm) === null)
+//   )
+// }, 10000)
+
+// channel.bind(messageEvent, collectWords)
+
+// const respondToPoo = data => {
+//   if (data.content === 'poo' || data.content === 'Poo') {
+//     sendMessage('Wee')
+//   }
+// }
+
+// const respondToKeith = data => {
+//   if (data.content === 'keith' || data.content === 'Keith') {
+//     sendMessage('Cheggers')
+//   }
+// }
+
+// const respondToPiss = data => {
+//   if (data.content === 'piss' || data.content === 'Piss') {
+//     sendMessage('Shit')
+//   }
+// }
+
+// channel.bind(messageEvent, data => {
+//   respondToPoo(data)
+//   respondToKeith(data)
+//   respondToPiss(data)
+// })
+
+// const spammerBoard = {
+//   Vypyr: 10,
+//   KetlordOfLiverpool: 20,
+//   madbaddog05: 34659,
+//   el_bojo_loco: 3385,
+//   Lattz: 1927,
+//   Vetionarian: 463,
+//   alienPPC: 1436,
+//   glogging: 1186,
+//   Deep_Ez: 65,
+//   bigapz: 300,
+//   PrimedOrange: 102,
+//   '6ustin': 92,
+//   neckbeard_aficionado: 143,
+//   Cheggsta: 276,
+//   Hunty93: 67,
+//   DynodazeDanny: 39,
+//   RgsRs: 15753,
+//   Hexical: 196,
+//   HolliaU: 40,
+//   benjamintrnt: 149,
+//   zSK98: 13,
+//   SmashF13ND: 317,
+//   Slash4646: 70,
+//   TyroneCheggers: 5,
+//   shrimpy94: 25,
+//   mr_cheggies: 10,
+//   Ego6Maguire: 25,
+//   Dannyth96: 5,
+//   azzy2022: 42,
+//   J4M3SP: 97,
+//   alfzawg: 7814,
+//   jackboijack2: 20,
+//   swordandland: 11,
+//   BIG_McQuill: 5,
+//   herbito: 4,
+//   Rich_xp: 53,
+//   Endorfinz: 5,
+//   Ajajajk: 5,
+//   GrossGoreKebabAli: 203,
+//   BarbieXL: 5,
+//   Luekk: 297,
+//   Vx_T: 225,
+//   KQ_T: 215,
+//   IronScott_1: 5,
+//   Bigtotes: 20,
+//   CelestiaVegas: 5,
+//   teeayyderulo: 35,
+//   Mr_Mo_Mentum: 103,
+//   cuckywucky: 14,
+//   Spooke1: 5,
+//   HeistZC: 5,
+//   Purplemauled: 82,
+//   Branyx: 6,
+//   Sande: 50,
+//   v3rzx: 10,
+//   haynes: 5,
+//   Jooshie: 13,
+//   OdacIock: 74,
+//   Goopwhacker: 12,
+//   soulsacrifice: 91,
+//   Yoey1: 139,
+//   CountOnCrypto: 1454,
+//   HandsomeBillyOnKet: 244,
+//   Swampoe: 2,
+//   angryspe: 16,
+//   SumAssHole: 5,
+//   ImCamelphat: 10,
+//   Nevi_728: 21,
+//   CrabStickSteve: 5,
+//   Dynamistu: 9,
+//   iZAjz: 247,
+//   Vintaqe_Osrs: 19,
+//   GWJRS: 4,
+//   xWhist: 14,
+//   name1name2: 5,
+//   Jeremy_Vine: 74,
+//   YasinW: 10,
+//   Stxkesey: 40,
+//   Skutch223: 15,
+//   Loolsy: 10,
+//   seanhnn: 40,
+//   edshotmachine: 5,
+//   zatsgrazyoffers: 5,
+//   '666RSI': 1,
+//   '96migrant': 13,
+//   nutcrackerr: 8,
+//   Gaz_T: 97,
+//   JonJames: 12,
+//   ven_5: 25,
+//   Atychiphobiaa: 5,
+//   snorzi: 11,
+// }
+
+// const collectCheggersSpam = data => {
+//   if (data.content.match(/emote:2836117:grossgoreCheggers/g)) {
+//     const user = data.sender.username
+
+//     const count = data.content.match(/emote:2836117:grossgoreCheggers/g).length
+
+//     if (spammerBoard[user]) {
+//       spammerBoard[user] += count
+//     } else {
+//       spammerBoard[user] = count
+//     }
+//   }
+
+//   console.log(JSON.stringify(spammerBoard, null, 2))
+// }
 
 // channel.bind(messageEvent, data => {
 //   collectCheggersSpam(data)
