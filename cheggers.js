@@ -52,30 +52,34 @@ function getCookie(name) {
 
 const auth = 'Bearer ' + decodeURI(getCookie('session_token'))
 
+let username = ''
+
+const getUser = async () => {
+  const res = await fetch('https://kick.com/api/v1/user', {
+    headers: {
+      accept: '*/*',
+      'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8,de;q=0.7',
+      authorization: auth,
+      'x-xsrf-token': decodeURI(getCookie('XSRF-TOKEN')),
+    },
+  })
+
+  const data = await res.json()
+
+  username = data.username
+}
+
+getUser()
+
 const sendMessage = message => {
   fetch(`https://kick.com/api/v2/messages/send/${kickChannelId}`, {
     headers: {
-      accept: 'application/json',
-      'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8,de;q=0.7',
       authorization: auth,
-      'cache-control': 'max-age=0',
       cluster: 'v2',
       'content-type': 'application/json',
-      priority: 'u=1, i',
-      'sec-ch-ua':
-        '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-dest': 'empty',
-      'sec-fetch-mode': 'cors',
-      'sec-fetch-site': 'same-origin',
     },
-    referrer: 'https://kick.com/grossgore',
-    referrerPolicy: 'strict-origin-when-cross-origin',
     body: `{"content":"${message}","type":"message"}`,
     method: 'POST',
-    mode: 'cors',
-    credentials: 'include',
   })
 }
 
@@ -88,7 +92,7 @@ let words = []
 const collectWords = data => {
   if (
     data.content.match(/emote:/gm) === null &&
-    data.sender.username !== 'el_bojo_loco'
+    data.sender.username !== username
   ) {
     // Grab words from data.content as array and add to words with current timestamp per word
 
@@ -300,24 +304,24 @@ const collectCheggersSpam = data => {
   console.log(JSON.stringify(spammerBoard, null, 2))
 }
 
-channel.bind(messageEvent, data => {
-  collectCheggersSpam(data)
-})
+// channel.bind(messageEvent, data => {
+//   collectCheggersSpam(data)
+// })
 
-setInterval(() => {
-  // Broadcast top 3 spammers every 40 seconds
-  const topSpammer = Object.entries(spammerBoard)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([user, count]) => `@${user} : ${count}`)
-    .join(', ')
+// setInterval(() => {
+//   // Broadcast top 3 spammers every 40 seconds
+//   const topSpammer = Object.entries(spammerBoard)
+//     .sort((a, b) => b[1] - a[1])
+//     .slice(0, 3)
+//     .map(([user, count]) => `@${user} : ${count}`)
+//     .join(', ')
 
-  const message = `Top 3 ${cheggersEmote} spammers: ${topSpammer}`
+//   const message = `Top 3 ${cheggersEmote} spammers: ${topSpammer}`
 
-  console.log(message)
+//   console.log(message)
 
-  sendMessage(message)
-}, 20000)
+//   sendMessage(message)
+// }, 20000)
 
 // const cheggers = []
 
