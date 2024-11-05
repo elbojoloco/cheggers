@@ -6,6 +6,9 @@ const messageEvent = 'App\\Events\\ChatMessageEvent'
 const emoteMessageRegex = /^\[emote:\d+:[a-zA-Z]+]$/gm
 const cheggersEmote = '[emote:2836117:grossgoreCheggers]'
 
+// IDEA: TTS library with quicksend button
+// IDEA: Overwrite emote click handler to bypass rate limit & allow setting the amount of emotes to send
+
 /**
  * This script is designed to be run in the browser console on the Kick website.
  * It listens for chat messages in the chatroom and counts the number of cheggers
@@ -44,10 +47,33 @@ const pusher = new Pusher(pusherAppId, {
 
 const channel = pusher.subscribe(kickChatroom)
 
+let filteredEmotes = []
+
+// Fuzzy search case insensitive for emotes
+function searchEmote(name) {
+  filteredEmotes = emotes.filter(emote =>
+    emote.name.toLowerCase().includes(name.toLowerCase())
+  )
+
+  console.log(filteredEmotes)
+
+  redrawHtml()
+
+  return filteredEmotes
+}
+
 function getCookie(name) {
   const value = `; ${document.cookie}`
   const parts = value.split(`; ${name}=`)
   if (parts.length === 2) return parts.pop().split(';').shift()
+}
+
+function redrawHtml() {
+  const emoteList = document.getElementById('emotes')
+
+  emoteList.innerHTML = filteredEmotes
+    .map(emote => `<option value="${emote.id}">${emote.name}</option>`)
+    .join('')
 }
 
 const addHtmlToBody = html => {
@@ -77,6 +103,115 @@ const getUser = async () => {
 
 getUser()
 
+const emotes = []
+
+const updateEmotePreviewSrc = () => {
+  const selectedEmote = document.getElementById('selectedemote').value
+
+  const emote = emotes.find(e => e.name === selectedEmote)
+
+  if (emote === undefined) {
+    return
+  }
+
+  document.getElementById('emotepreview').src = emote.image
+}
+
+const getEmotes = async () => {
+  const res = await fetch('https://kick.com/emotes/grossgore', {
+    headers: {
+      accept: 'application/json',
+      'accept-language': 'en-GB,en;q=0.9',
+      cluster: 'v2',
+    },
+  })
+
+  const data = await res.json()
+
+  data.forEach(source => {
+    source.emotes.forEach(emote => {
+      emotes.push({
+        id: emote.id,
+        name: emote.name,
+        image: `https://files.kick.com/emotes/${emote.id}/fullsize`,
+      })
+    })
+  })
+
+  addHtmlToBody(`
+    <div class="cheggers">
+      <h1>Cheggers</h1>
+  
+      <button onclick="() => {}" disabled title="Coming soon">Send random TTS</button>
+  
+      <div style="
+          display: flex;
+          align-items: center;
+          gap: 10px;
+      ">
+          <button onclick="emoteFlashbang()">Emote flashbang</button>
+          <img id="emotepreview" src="https://files.kick.com/emotes/2836117/fullsize" alt="Cheggers" style="
+              width: auto;
+              height: 50px;
+          ">
+      </div>
+
+      <label for="selectedemote">Emote to spam</label>
+      <input type="text" id="selectedemote" placeholder="Search emotes" list="emotes" value="grossgoreCheggers" onInput="updateEmotePreviewSrc()" />
+      <datalist id="emotes">
+        ${emotes
+          .map(emote => `<option value="${emote.name}"></option>`)
+          .join('')}
+      </datalist>
+
+      <label for="emoteamount">Amount per message</label>
+      <input type="number" id="emoteamount" placeholder="Amount" value="10" min="1" max="14" />
+
+      <label for="messageamount">Amount of messages</label>
+      <input type="number" id="messageamount" placeholder="Amount" value="5" min="1" max="15" />
+    </div>
+  
+    <style>
+      .cheggers {
+        position: fixed;
+        left: 10px;
+        bottom: 10px;
+        background-color: #000;
+        color: #fff;
+        padding: 10px;
+        z-index: 9999;
+      }
+  
+      .cheggers input {
+        display: block;
+        margin-bottom: 10px;
+        padding: 10px;
+        background-color: #fff;
+        color: #000;
+        border: none;
+      }
+  
+      .cheggers button {
+        display: block;
+        margin-bottom: 10px;
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #fff;
+        color: #000;
+        border: none;
+      }
+  
+      .cheggers button:disabled {
+        background-color: #ccc;
+        color: #000;
+        cursor: not-allowed;
+      }
+    </style>
+  `)
+}
+
+getEmotes()
+
 const sendMessage = message => {
   fetch(`https://kick.com/api/v2/messages/send/${kickChannelId}`, {
     headers: {
@@ -89,374 +224,43 @@ const sendMessage = message => {
   })
 }
 
-const cheggersFlashbang = () => {
-  for (let i = 0; i < 10; i++) {
-    sendMessage(
-      `${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote} ${cheggersEmote}`
-    )
+const emoteFlashbang = () => {
+  if (document.getElementById('selectedemote').value === '') {
+    alert('Please select an emote')
+    return
+  }
+
+  if (
+    emotes.find(
+      e => e.name === document.getElementById('selectedemote').value
+    ) === undefined
+  ) {
+    alert('Invalid emote')
+    return
+  }
+
+  if (document.getElementById('emoteamount').value === '') {
+    alert('Please enter an amount')
+    return
+  }
+
+  if (document.getElementById('messageamount').value === '') {
+    alert('Please enter an amount')
+    return
+  }
+
+  const selectedEmote = document.getElementById('selectedemote').value
+
+  const emote = emotes.find(e => e.name === selectedEmote)
+
+  const emoteText = `[emote:${emote.id}:${emote.name}] `
+
+  const emoteAmount = document.getElementById('emoteamount').value
+
+  const messageAmount = document.getElementById('messageamount').value
+
+  for (let i = 0; i < messageAmount; i++) {
+    sendMessage(emoteText.repeat(emoteAmount))
+    console.log(emoteText.repeat(emoteAmount))
   }
 }
-
-addHtmlToBody(`
-  <div class="cheggers">
-    <h1>Cheggers</h1>
-
-    <button onclick="() => {}" disabled title="Coming soon">Send random TTS</button>
-
-    <button onclick="cheggersFlashbang()">Cheggers flashbang</button>
-  </div>
-
-  <style>
-    .cheggers {
-      position: fixed;
-      left: 10px;
-      bottom: 10px;
-      background-color: #000;
-      color: #fff;
-      padding: 10px;
-      z-index: 9999;
-    }
-
-    .cheggers button {
-      display: block;
-      margin-bottom: 10px;
-      margin-top: 10px;
-      padding: 10px;
-      background-color: #fff;
-      color: #000;
-      border: none;
-    }
-
-    .cheggers button:disabled {
-      background-color: #ccc;
-      color: #000;
-      cursor: not-allowed;
-    }
-  </style>
-`)
-
-// function onlyUnique(value, index, array) {
-//   return array.indexOf(value) === index
-// }
-
-// let words = []
-
-// const collectWords = data => {
-//   if (
-//     data.content.match(/emote:/gm) === null &&
-//     data.sender.username !== username
-//   ) {
-//     // Grab words from data.content as array and add to words with current timestamp per word
-
-//     const w = data.content.trim().split(/\s+/)
-
-//     if (w.length) {
-//       words = [...words, ...w.map(word => [Date.now(), word])]
-//     }
-//   }
-// }
-
-// // const voices = ['arnold', 'phil', 'kermit', 'duke', 'trump', 'spongebob']
-// const voices = ['elmo', 'spongebob']
-// const p = ['!', '?', '.']
-
-// const sendRandomTts = () => {
-//   console.log('words: ', words)
-
-//   console.log(
-//     'filtered: ',
-//     words.filter(w => w[0] >= Date.now() - 120000)
-//   )
-
-//   let onlyWords = words
-//     .map(w => w[1])
-//     // .filter(onlyUnique)
-//     .filter(w => w.match(/^\!/gm) === null)
-//     .filter(w => w.match(/^v=/gm) === null)
-//     .filter(w => w.match(/"/gm) === null)
-//     .filter(w => w.match(/^\(/gm) === null)
-//     .filter(w => w.match(/\d+s\.$/gm) === null)
-//     .filter(w => w.match(/\d+m$/gm) === null)
-//     .filter(w => w.match(/\)$/gm) === null)
-//     .filter(w => w.match(/^#/gm) === null)
-//     .filter(w => w.match(/^@/gm) === null)
-
-//   const shuffled = onlyWords.sort(() => 0.5 - Math.random())
-//   const selected = shuffled.slice(0, Math.round(Math.random() * 20 + 20))
-
-//   const voice = voices[Math.floor(Math.random() * voices.length)]
-
-//   const message = `!${voice} ${selected.join(' ')}${
-//     p[Math.floor(Math.random() * p.length)]
-//   }`
-
-//   console.log(message)
-
-//   sendMessage(message)
-// }
-
-// setTimeout(() => {
-//   sendRandomTts()
-
-//   setInterval(sendRandomTts, 75000)
-// }, 25000)
-
-// setInterval(() => {
-//   words = words.filter(w => w[0] >= Date.now() - 200000)
-
-//   console.log(
-//     words
-//       .map(w => w[1])
-//       // .filter(onlyUnique)
-//       .filter(w => w.match(/^\!/gm) === null)
-//       .filter(w => w.match(/^v=/gm) === null)
-//       .filter(w => w.match(/"/gm) === null)
-//       .filter(w => w.match(/^\(/gm) === null)
-//       .filter(w => w.match(/\d+s\.$/gm) === null)
-//       .filter(w => w.match(/\d+m$/gm) === null)
-//       .filter(w => w.match(/\)$/gm) === null)
-//       .filter(w => w.match(/^#/gm) === null)
-//       .filter(w => w.match(/^@/gm) === null)
-//   )
-// }, 10000)
-
-// channel.bind(messageEvent, collectWords)
-
-// const respondToPoo = data => {
-//   if (data.content === 'poo' || data.content === 'Poo') {
-//     sendMessage('Wee')
-//   }
-// }
-
-// const respondToKeith = data => {
-//   if (data.content === 'keith' || data.content === 'Keith') {
-//     sendMessage('Cheggers')
-//   }
-// }
-
-// const respondToPiss = data => {
-//   if (data.content === 'piss' || data.content === 'Piss') {
-//     sendMessage('Shit')
-//   }
-// }
-
-// channel.bind(messageEvent, data => {
-//   respondToPoo(data)
-//   respondToKeith(data)
-//   respondToPiss(data)
-// })
-
-// const spammerBoard = {
-//   Vypyr: 10,
-//   KetlordOfLiverpool: 20,
-//   madbaddog05: 34659,
-//   el_bojo_loco: 3385,
-//   Lattz: 1927,
-//   Vetionarian: 463,
-//   alienPPC: 1436,
-//   glogging: 1186,
-//   Deep_Ez: 65,
-//   bigapz: 300,
-//   PrimedOrange: 102,
-//   '6ustin': 92,
-//   neckbeard_aficionado: 143,
-//   Cheggsta: 276,
-//   Hunty93: 67,
-//   DynodazeDanny: 39,
-//   RgsRs: 15753,
-//   Hexical: 196,
-//   HolliaU: 40,
-//   benjamintrnt: 149,
-//   zSK98: 13,
-//   SmashF13ND: 317,
-//   Slash4646: 70,
-//   TyroneCheggers: 5,
-//   shrimpy94: 25,
-//   mr_cheggies: 10,
-//   Ego6Maguire: 25,
-//   Dannyth96: 5,
-//   azzy2022: 42,
-//   J4M3SP: 97,
-//   alfzawg: 7814,
-//   jackboijack2: 20,
-//   swordandland: 11,
-//   BIG_McQuill: 5,
-//   herbito: 4,
-//   Rich_xp: 53,
-//   Endorfinz: 5,
-//   Ajajajk: 5,
-//   GrossGoreKebabAli: 203,
-//   BarbieXL: 5,
-//   Luekk: 297,
-//   Vx_T: 225,
-//   KQ_T: 215,
-//   IronScott_1: 5,
-//   Bigtotes: 20,
-//   CelestiaVegas: 5,
-//   teeayyderulo: 35,
-//   Mr_Mo_Mentum: 103,
-//   cuckywucky: 14,
-//   Spooke1: 5,
-//   HeistZC: 5,
-//   Purplemauled: 82,
-//   Branyx: 6,
-//   Sande: 50,
-//   v3rzx: 10,
-//   haynes: 5,
-//   Jooshie: 13,
-//   OdacIock: 74,
-//   Goopwhacker: 12,
-//   soulsacrifice: 91,
-//   Yoey1: 139,
-//   CountOnCrypto: 1454,
-//   HandsomeBillyOnKet: 244,
-//   Swampoe: 2,
-//   angryspe: 16,
-//   SumAssHole: 5,
-//   ImCamelphat: 10,
-//   Nevi_728: 21,
-//   CrabStickSteve: 5,
-//   Dynamistu: 9,
-//   iZAjz: 247,
-//   Vintaqe_Osrs: 19,
-//   GWJRS: 4,
-//   xWhist: 14,
-//   name1name2: 5,
-//   Jeremy_Vine: 74,
-//   YasinW: 10,
-//   Stxkesey: 40,
-//   Skutch223: 15,
-//   Loolsy: 10,
-//   seanhnn: 40,
-//   edshotmachine: 5,
-//   zatsgrazyoffers: 5,
-//   '666RSI': 1,
-//   '96migrant': 13,
-//   nutcrackerr: 8,
-//   Gaz_T: 97,
-//   JonJames: 12,
-//   ven_5: 25,
-//   Atychiphobiaa: 5,
-//   snorzi: 11,
-// }
-
-// const collectCheggersSpam = data => {
-//   if (data.content.match(/emote:2836117:grossgoreCheggers/g)) {
-//     const user = data.sender.username
-
-//     const count = data.content.match(/emote:2836117:grossgoreCheggers/g).length
-
-//     if (spammerBoard[user]) {
-//       spammerBoard[user] += count
-//     } else {
-//       spammerBoard[user] = count
-//     }
-//   }
-
-//   console.log(JSON.stringify(spammerBoard, null, 2))
-// }
-
-// channel.bind(messageEvent, data => {
-//   collectCheggersSpam(data)
-// })
-
-// setInterval(() => {
-//   // Broadcast top 3 spammers every 40 seconds
-//   const topSpammer = Object.entries(spammerBoard)
-//     .sort((a, b) => b[1] - a[1])
-//     .slice(0, 3)
-//     .map(([user, count]) => `@${user} : ${count}`)
-//     .join(', ')
-
-//   const message = `Top 3 ${cheggersEmote} spammers: ${topSpammer}`
-
-//   console.log(message)
-
-//   sendMessage(message)
-// }, 20000)
-
-// const cheggers = []
-
-// let enabled = true
-// let streakTimeout
-// let lastEmote = ''
-// const emoteStreak = []
-
-// const endStreak = () => {
-//   if (emoteStreak.length > emoteStreakMinimum && enabled) {
-//     enabled = false
-//     console.log('Ending streak')
-
-//     const count = emoteStreak.length
-
-//     const previousRecord = longestStreak
-
-//     let appends = ''
-
-//     if (count > longestStreak) {
-//       longestStreak = count
-
-//       if (previousRecord !== 0) {
-//         appends = " That's a new record!"
-//       }
-//     }
-
-//     const message = `${lastEmote} streak x${count} cheers!${appends}`
-
-//     sendMessage(message)
-
-//     console.log(message)
-
-//     setTimeout(() => (enabled = true), emoteStreakCollectionCooldown * 1000)
-//   }
-
-//   console.log('Ending streak after timeout or early break')
-
-//   lastEmote = ''
-//   emoteStreak.length = 0
-// }
-
-// let cheggersCount = (
-//   data.content.match(/emote:2836117:grossgoreCheggers/g) || []
-// ).length
-
-// if (cheggersCount > 0) {
-//   for (i = 0; i < cheggersCount; i++) {
-//     cheggers.push(Date.now())
-//   }
-// }
-
-// if (data.content.match(emoteMessageRegex)) {
-//   console.log(data.content)
-
-//   clearTimeout(streakTimeout)
-//   console.log('Resetting streak timeout')
-
-//   const emote = data.content
-
-//   if (emoteStreak.length === 0) {
-//     emoteStreak.push(emote)
-//   } else {
-//     if (emote === lastEmote) {
-//       emoteStreak.push(emote)
-//     } else {
-//       endStreak()
-//     }
-//   }
-
-//   lastEmote = `${emote}`
-
-//   streakTimeout = setTimeout(endStreak, emoteStreakInterval)
-// }
-
-// setInterval(() => {
-//   const count = cheggers.filter(
-//     timestamp => timestamp > Date.now() - 120000
-//   ).length
-
-//   const avg = Math.round(count / 2)
-
-//   sendMessage(`Current ${cheggersEmote} per minute: ${avg}`)
-
-//   console.log(`Current ${cheggersEmote} per minute: ${avg}`)
-// }, cheggersPerMinuteBroadcastInterval * 1000)
