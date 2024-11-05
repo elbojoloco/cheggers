@@ -142,7 +142,7 @@ const getEmotes = async () => {
     <div class="cheggers">
       <h1>Cheggers</h1>
   
-      <button onclick="() => {}" disabled title="Coming soon">Send random TTS</button>
+      <button onclick="sendRandomTts()">Send random TTS</button>
   
       <div style="
           display: flex;
@@ -264,3 +264,97 @@ const emoteFlashbang = () => {
     console.log(emoteText.repeat(emoteAmount))
   }
 }
+
+// function onlyUnique(value, index, array) {
+//   return array.indexOf(value) === index
+// }
+
+let words = []
+
+const collectWords = data => {
+  if (
+    data.content.match(/emote:/gm) === null &&
+    data.sender.username !== username
+  ) {
+    // Grab words from data.content as array and add to words with current timestamp per word
+
+    const w = data.content.trim().split(/\s+/)
+
+    if (w.length) {
+      words = [...words, ...w.map(word => [Date.now(), word])]
+    }
+  }
+}
+
+const voices = [
+  'elmo',
+  'spongebob',
+  'kermit',
+  'arnold',
+  'phil',
+  'duke',
+  'trump',
+  'rick',
+]
+const p = ['!', '?', '.']
+
+const sendRandomTts = () => {
+  console.log('words: ', words)
+
+  if (words.length < 10) {
+    alert('Not enough words collected yet')
+    return
+  }
+
+  console.log(
+    'filtered: ',
+    words.filter(w => w[0] >= Date.now() - 120000)
+  )
+
+  let onlyWords = words
+    .map(w => w[1])
+    // .filter(onlyUnique)
+    .filter(w => w.match(/^\!/gm) === null)
+    .filter(w => w.match(/^v=/gm) === null)
+    .filter(w => w.match(/"/gm) === null)
+    .filter(w => w.match(/^\(/gm) === null)
+    .filter(w => w.match(/\d+s\.$/gm) === null)
+    .filter(w => w.match(/\d+m$/gm) === null)
+    .filter(w => w.match(/\)$/gm) === null)
+    .filter(w => w.match(/^#/gm) === null)
+    .filter(w => w.match(/^@/gm) === null)
+
+  const shuffled = onlyWords.sort(() => 0.5 - Math.random())
+  const selected = shuffled.slice(0, Math.round(Math.random() * 20 + 20))
+
+  const voice = voices[Math.floor(Math.random() * voices.length)]
+
+  const message = `!${voice} ${selected.join(' ')}${
+    p[Math.floor(Math.random() * p.length)]
+  }`
+
+  console.log(message)
+
+  sendMessage(message)
+}
+
+setInterval(() => {
+  words = words.filter(w => w[0] >= Date.now() - 200000)
+
+  console.log(
+    words
+      .map(w => w[1])
+      // .filter(onlyUnique)
+      .filter(w => w.match(/^\!/gm) === null)
+      .filter(w => w.match(/^v=/gm) === null)
+      .filter(w => w.match(/"/gm) === null)
+      .filter(w => w.match(/^\(/gm) === null)
+      .filter(w => w.match(/\d+s\.$/gm) === null)
+      .filter(w => w.match(/\d+m$/gm) === null)
+      .filter(w => w.match(/\)$/gm) === null)
+      .filter(w => w.match(/^#/gm) === null)
+      .filter(w => w.match(/^@/gm) === null)
+  )
+}, 10000)
+
+channel.bind(messageEvent, collectWords)
