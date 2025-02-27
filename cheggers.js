@@ -165,10 +165,10 @@ const getEmotes = async () => {
       </datalist>
 
       <label for="emoteamount">Amount per message</label>
-      <input type="number" id="emoteamount" placeholder="Amount" value="10" min="1" max="14" />
+      <input type="number" id="emoteamount" placeholder="Amount" value="1" min="1" max="14" />
 
       <label for="messageamount">Amount of messages</label>
-      <input type="number" id="messageamount" placeholder="Amount" value="5" min="1" max="15" />
+      <input type="number" id="messageamount" placeholder="Amount" value="1" min="1" max="15" />
     </div>
   
     <style>
@@ -211,6 +211,56 @@ const getEmotes = async () => {
 }
 
 getEmotes()
+
+const quickEmoteHolder = document.getElementById('quick-emotes-holder');
+
+if (quickEmoteHolder) {
+  quickEmoteHolder.addEventListener('click', e => {
+    /**
+     * Example src: https://files.kick.com/emotes/3303101/fullsize
+     * 
+     * Get the emote ID from the src using regex and get the emote object from the emotes array by the id
+     */
+    const emoteId = e.target.src.match(/emotes\/(\d+)/)[1];
+    
+    if (!emoteId) return;
+
+    const emote = emotes.find(e => e.id === parseInt(emoteId));
+
+    if (!emote) return;
+
+    /**
+     * Overwrite the fetch function to cancel the first next emote message request
+     * If within 100ms such a request is cancelled, don't send another emote message.
+     * If there was no such request in 100ms (client side rate limit), send the emote message.
+     * Then restore the 
+     */
+
+    const { fetch: originalFetch } = window;
+
+    const sendMessageFallback = setTimeout(() => {
+      sendMessage(`[emote:${emote.id}:${emote.name}]`);
+      e.stopPropagation()
+    }, 100)
+
+    window.fetch = async (...args) => {
+        let [resource, config] = args;
+
+        // request interceptor starts
+        if (resource.includes('https://kick.com/api/v2/messages/send/')) {
+            clearTimeout(sendMessageFallback);
+        }
+        // request interceptor ends
+
+        const response = await originalFetch(resource, config);
+        
+        window.fetch = originalFetch;
+
+        // response interceptor here
+        return response;
+    };
+  })
+}
 
 const sendMessage = message => {
   fetch(`https://kick.com/api/v2/messages/send/${kickChannelId}`, {
