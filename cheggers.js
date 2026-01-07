@@ -166,8 +166,12 @@ const StorageRepo = {
   // Specific data accessors
   getConfig: () => StorageRepo.get('cheggers_config', {
     selectedVoice: 'snape',
-    voicesCollapsed: false,
-    maxWords: 32
+    maxWords: 32,
+    randomTtsCollapsed: false,
+    emoteSpamCollapsed: false,
+    ttsLibraryCollapsed: false,
+    ttsHistoryCollapsed: false,
+    srHistoryCollapsed: false
   }),
   
   setConfig: (config) => StorageRepo.set('cheggers_config', config),
@@ -192,7 +196,15 @@ const StorageRepo = {
     // Add timestamp and limit to last 100
     history.unshift({ message, timestamp: Date.now() })
     StorageRepo.set('cheggers_sr_history', history.slice(0, 100))
-  }
+  },
+  
+  getLastTtsTimestamp: () => StorageRepo.get('cheggers_last_tts_timestamp', 0),
+  
+  setLastTtsTimestamp: (timestamp) => StorageRepo.set('cheggers_last_tts_timestamp', timestamp),
+  
+  getLastSrTimestamp: () => StorageRepo.get('cheggers_last_sr_timestamp', 0),
+  
+  setLastSrTimestamp: (timestamp) => StorageRepo.set('cheggers_last_sr_timestamp', timestamp)
 }
 
 // ============================================================================
@@ -201,22 +213,30 @@ const StorageRepo = {
 // Load config from localStorage
 const config = StorageRepo.getConfig()
 let selectedVoice = config.selectedVoice || 'snape'
-let voicesCollapsed = config.voicesCollapsed || false
 let autoSendTts = false // Always false on initialization, not stored
 let maxWords = config.maxWords || 32
+let randomTtsCollapsed = config.randomTtsCollapsed || false
+let emoteSpamCollapsed = config.emoteSpamCollapsed || false
+let ttsLibraryCollapsed = config.ttsLibraryCollapsed || false
+let ttsHistoryCollapsed = config.ttsHistoryCollapsed || false
+let srHistoryCollapsed = config.srHistoryCollapsed || false
 
 // Saved messages management
 let savedMessages = StorageRepo.getSavedMessages() // Array of {id, message, autoSend}
 let autoSendMessageId = null // ID of message set to auto-send
 
 // TTS cooldown tracking
-let ttsCooldownEndTime = 0
 const ttsCooldownDuration = 120000 // 2 minutes in milliseconds
 const ttsCooldownGracePeriod = 3000 // 3 seconds grace period
+// Load last TTS timestamp and calculate cooldown end time
+const lastTtsTimestamp = StorageRepo.getLastTtsTimestamp()
+let ttsCooldownEndTime = lastTtsTimestamp > 0 ? lastTtsTimestamp + ttsCooldownDuration : 0
 
 // Song request cooldown tracking
-let srCooldownEndTime = 0
 const srCooldownDuration = 600000 // 10 minutes in milliseconds
+// Load last SR timestamp and calculate cooldown end time
+const lastSrTimestamp = StorageRepo.getLastSrTimestamp()
+let srCooldownEndTime = lastSrTimestamp > 0 ? lastSrTimestamp + srCooldownDuration : 0
 
 // Current TTS message to send
 let currentTtsMessage = ''
@@ -307,39 +327,30 @@ const handleEmoteSearch = () => {
   
   if (!resultsContainer) return
   
-  // Filter emotes based on search
-  const matchingEmotes = emotes.filter(emote => 
-    emote.name.toLowerCase().includes(searchValue)
-  )
+  // Filter emotes based on search (show all if empty)
+  const matchingEmotes = searchValue === '' 
+    ? emotes 
+    : emotes.filter(emote => emote.name.toLowerCase().includes(searchValue))
   
   // Check if search exactly matches an emote name
   const exactMatch = emotes.find(e => e.name.toLowerCase() === searchValue)
   activeEmote = exactMatch || null
   
-  // Update preview if there's an exact match
-  if (activeEmote) {
-    document.getElementById('emotepreview').src = activeEmote.image
-  }
+  // Display matching emotes (always show, even when empty)
+  resultsContainer.innerHTML = matchingEmotes
+    .slice(0, 20) // Limit to 20 results for performance
+    .map(emote => `
+      <div class="emote-search-item ${activeEmote && activeEmote.name === emote.name ? 'active' : ''}" 
+           onclick="selectEmote('${emote.name}')">
+        <img src="${emote.image}" alt="${emote.name}" class="emote-search-item-img" />
+        <span class="emote-search-item-name">${emote.name}</span>
+      </div>
+    `).join('')
   
-  // Display matching emotes
-  if (searchValue === '') {
-    resultsContainer.innerHTML = ''
-    resultsContainer.classList.remove('show')
+  if (matchingEmotes.length > 0) {
+    resultsContainer.classList.add('show')
   } else {
-    resultsContainer.innerHTML = matchingEmotes
-      .slice(0, 20) // Limit to 20 results for performance
-      .map(emote => `
-        <div class="emote-search-item ${activeEmote && activeEmote.name === emote.name ? 'active' : ''}" 
-             onclick="selectEmote('${emote.name}')">
-          <img src="${emote.image}" alt="${emote.name}" class="emote-search-item-img" />
-          <span class="emote-search-item-name">${emote.name}</span>
-        </div>
-      `).join('')
-    if (matchingEmotes.length > 0) {
-      resultsContainer.classList.add('show')
-    } else {
-      resultsContainer.classList.remove('show')
-    }
+    resultsContainer.classList.remove('show')
   }
 }
 
@@ -380,30 +391,72 @@ const toggleMinimize = () => {
   }
 }
 
-// Toggle voices collapse
-const toggleVoicesCollapse = () => {
-  voicesCollapsed = !voicesCollapsed
-  saveConfig()
-  const voicesContainer = document.getElementById('voices-container')
-  const collapseIcon = document.querySelector('.collapse-icon')
+// Toggle section collapse
+const toggleSection = (sectionName) => {
+  let collapsed = false
+  const contentId = sectionName === 'randomTts' ? 'random-tts-content' :
+                    sectionName === 'emoteSpam' ? 'emote-spam-content' :
+                    sectionName === 'ttsLibrary' ? 'tts-library-content' :
+                    sectionName === 'ttsHistory' ? 'tts-history-content' :
+                    'sr-history-content'
   
-  if (voicesContainer) {
-    if (voicesCollapsed) {
-      voicesContainer.classList.add('collapsed')
-      if (collapseIcon) collapseIcon.textContent = '▶'
+  const content = document.getElementById(contentId)
+  const header = content?.closest('.collapsible-section')?.querySelector('.section-header')
+  const icon = header?.querySelector('.collapse-icon')
+  
+  if (sectionName === 'randomTts') {
+    randomTtsCollapsed = !randomTtsCollapsed
+    collapsed = randomTtsCollapsed
+  } else if (sectionName === 'emoteSpam') {
+    emoteSpamCollapsed = !emoteSpamCollapsed
+    collapsed = emoteSpamCollapsed
+  } else if (sectionName === 'ttsLibrary') {
+    ttsLibraryCollapsed = !ttsLibraryCollapsed
+    collapsed = ttsLibraryCollapsed
+  } else if (sectionName === 'ttsHistory') {
+    ttsHistoryCollapsed = !ttsHistoryCollapsed
+    collapsed = ttsHistoryCollapsed
+  } else if (sectionName === 'srHistory') {
+    srHistoryCollapsed = !srHistoryCollapsed
+    collapsed = srHistoryCollapsed
+  }
+  
+  saveConfig()
+  
+  if (content) {
+    if (collapsed) {
+      content.classList.add('collapsed')
+      if (icon) icon.textContent = '▶'
     } else {
-      voicesContainer.classList.remove('collapsed')
-      if (collapseIcon) collapseIcon.textContent = '▼'
+      content.classList.remove('collapsed')
+      if (icon) icon.textContent = '▼'
     }
   }
+}
+
+// Close TTS preview
+const closeTtsPreview = () => {
+  const preview = document.getElementById('tts-preview-info')
+  if (preview) {
+    preview.style.display = 'none'
+  }
+  const sendBtn = document.getElementById('send-tts-btn')
+  if (sendBtn) {
+    sendBtn.style.display = 'none'
+  }
+  currentTtsMessage = ''
 }
 
 // Save config to localStorage (autoSendTts is not stored)
 const saveConfig = () => {
   StorageRepo.setConfig({
     selectedVoice,
-    voicesCollapsed,
-    maxWords
+    maxWords,
+    randomTtsCollapsed,
+    emoteSpamCollapsed,
+    ttsLibraryCollapsed,
+    ttsHistoryCollapsed,
+    srHistoryCollapsed
   })
 }
 
@@ -618,15 +671,15 @@ const getEmotes = async () => {
       </div>
 
       <div id="cheggers-content" class="cheggers-content">
-        <div class="cheggers-section">
-          <h2 class="section-title">TTS Generator</h2>
+        <div class="cheggers-section collapsible-section">
+          <div class="section-header" onclick="toggleSection('randomTts')">
+            <h2 class="section-title">Random TTS</h2>
+            <span class="collapse-icon">${randomTtsCollapsed ? '▶' : '▼'}</span>
+          </div>
+          <div id="random-tts-content" class="section-content ${randomTtsCollapsed ? 'collapsed' : ''}">
           <div class="cheggers-section-inner">
-            <div class="voices-header" onclick="toggleVoicesCollapse()">
-              <label class="cheggers-label" style="margin-bottom: 0; cursor: pointer;">TTS Voices</label>
-              <span class="collapse-icon">▼</span>
-            </div>
-            <div id="voices-container" class="voices-container ${voicesCollapsed ? 'collapsed' : ''}">
-              <div class="voices-radio-container">
+            <label class="cheggers-label">TTS Voices</label>
+            <div class="voices-radio-container">
                 <label class="voice-radio-label">
                   <input 
                     type="radio" 
@@ -651,7 +704,6 @@ const getEmotes = async () => {
                     <span class="voice-radio-button ${selectedVoice === voice ? 'active' : ''}">${voice}</span>
                   </label>
                 `).join('')}
-              </div>
             </div>
           </div>
           <div class="auto-send-container">
@@ -667,8 +719,14 @@ const getEmotes = async () => {
           <button class="cheggers-btn cheggers-btn-primary" onclick="sendRandomTts()">
             Generate TTS
           </button>
-          <div id="tts-preview-info" class="tts-preview-info">
-            <div class="tts-info-placeholder">Generate a TTS message to see preview</div>
+          <div id="tts-preview-info" class="tts-preview-info" style="display: none;">
+            <div class="tts-preview-header">
+              <span class="tts-preview-title">TTS Preview</span>
+              <button class="tts-preview-close" onclick="closeTtsPreview()" title="Close">✕</button>
+            </div>
+            <div class="tts-preview-content">
+              <div class="tts-info-placeholder">Generate a TTS message to see preview</div>
+            </div>
           </div>
           <button id="send-tts-btn" class="cheggers-btn cheggers-btn-send" onclick="sendTtsMessage()" style="display: none;">
             Send TTS
@@ -676,16 +734,18 @@ const getEmotes = async () => {
           <div class="words-stats">
             <span id="words-count">Word list: ${getFilteredWords().length}</span>
           </div>
+          </div>
         </div>
 
-        <div class="cheggers-section">
-          <h2 class="section-title">Emote Flashbang</h2>
-          <div class="emote-preview-container">
-            <img id="emotepreview" src="https://files.kick.com/emotes/1730794/fullsize" alt="Cheggers" class="emote-preview">
+        <div class="cheggers-section collapsible-section">
+          <div class="section-header" onclick="toggleSection('emoteSpam')">
+            <h2 class="section-title">Emote Spam</h2>
+            <span class="collapse-icon">${emoteSpamCollapsed ? '▶' : '▼'}</span>
           </div>
+          <div id="emote-spam-content" class="section-content ${emoteSpamCollapsed ? 'collapsed' : ''}">
           <label class="cheggers-label" for="selectedemote">Emote to spam</label>
           <input type="text" id="selectedemote" class="cheggers-input" placeholder="Search emotes" value="emojiLol" onInput="handleEmoteSearch()" />
-          <div id="emote-search-results" class="emote-search-results"></div>
+          <div id="emote-search-results" class="emote-search-results show"></div>
 
           <div class="input-group">
             <div class="input-group-item">
@@ -698,25 +758,41 @@ const getEmotes = async () => {
             </div>
           </div>
           <button class="cheggers-btn" onclick="emoteFlashbang()">Emote Flashbang</button>
+          </div>
         </div>
 
-        <div class="cheggers-section">
-          <h2 class="section-title">Saved TTS Messages</h2>
+        <div class="cheggers-section collapsible-section">
+          <div class="section-header" onclick="toggleSection('ttsLibrary')">
+            <h2 class="section-title">TTS Library</h2>
+            <span class="collapse-icon">${ttsLibraryCollapsed ? '▶' : '▼'}</span>
+          </div>
+          <div id="tts-library-content" class="section-content ${ttsLibraryCollapsed ? 'collapsed' : ''}">
           <div class="saved-message-add">
             <input type="text" id="new-saved-message" class="cheggers-input" placeholder="Enter TTS message to save" />
             <button class="cheggers-btn" onclick="saveTtsMessage(document.getElementById('new-saved-message').value); document.getElementById('new-saved-message').value = '';">Save</button>
           </div>
           <div id="saved-messages-list" class="saved-messages-list"></div>
+          </div>
         </div>
 
-        <div class="cheggers-section">
-          <h2 class="section-title">TTS History</h2>
+        <div class="cheggers-section collapsible-section">
+          <div class="section-header" onclick="toggleSection('ttsHistory')">
+            <h2 class="section-title">TTS History</h2>
+            <span class="collapse-icon">${ttsHistoryCollapsed ? '▶' : '▼'}</span>
+          </div>
+          <div id="tts-history-content" class="section-content ${ttsHistoryCollapsed ? 'collapsed' : ''}">
           <div id="tts-history-list" class="history-list"></div>
+          </div>
         </div>
 
-        <div class="cheggers-section">
-          <h2 class="section-title">Song Request History</h2>
+        <div class="cheggers-section collapsible-section">
+          <div class="section-header" onclick="toggleSection('srHistory')">
+            <h2 class="section-title">Song Request History</h2>
+            <span class="collapse-icon">${srHistoryCollapsed ? '▶' : '▼'}</span>
+          </div>
+          <div id="sr-history-content" class="section-content ${srHistoryCollapsed ? 'collapsed' : ''}">
           <div id="sr-history-list" class="history-list"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -880,6 +956,86 @@ const getEmotes = async () => {
         border: 1px solid rgba(255, 255, 255, 0.15);
       }
 
+      .tts-preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .tts-preview-title {
+        font-weight: 600;
+        color: #00ff88;
+        font-size: 14px;
+      }
+
+      .tts-preview-close {
+        background: rgba(255, 100, 100, 0.15);
+        border: 1px solid #ff6464;
+        color: #ff6464;
+        border-radius: 4px;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 0;
+        transition: all 0.2s ease;
+      }
+
+      .tts-preview-close:hover {
+        background: rgba(255, 100, 100, 0.25);
+      }
+
+      .tts-preview-content {
+        font-size: 12px;
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        margin-bottom: 10px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        transition: background-color 0.2s ease;
+      }
+
+      .section-header:hover {
+        background-color: rgba(0, 255, 136, 0.1);
+      }
+
+      .section-header .section-title {
+        margin-bottom: 0;
+      }
+
+      .section-header .collapse-icon {
+        font-size: 12px;
+        color: #b0b0b0;
+        transition: transform 0.2s ease, color 0.2s ease;
+      }
+
+      .section-header:hover .collapse-icon {
+        color: #00ff88;
+      }
+
+      .section-content {
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+        max-height: 2000px;
+      }
+
+      .section-content.collapsed {
+        max-height: 0;
+        overflow: hidden;
+      }
+
       .tts-info-placeholder {
         color: #b0b0b0;
         font-style: italic;
@@ -928,30 +1084,6 @@ const getEmotes = async () => {
         margin-bottom: 12px;
       }
 
-      .voices-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        cursor: pointer;
-        user-select: none;
-        margin-bottom: 8px;
-      }
-
-      .collapse-icon {
-        font-size: 12px;
-        color: #b0b0b0;
-        transition: transform 0.2s ease;
-      }
-
-      .voices-container {
-        overflow: hidden;
-        transition: max-height 0.3s ease;
-        max-height: 500px;
-      }
-
-      .voices-container.collapsed {
-        max-height: 0;
-      }
 
       .auto-send-container {
         margin-bottom: 12px;
@@ -969,6 +1101,11 @@ const getEmotes = async () => {
         user-select: none;
         font-size: 13px;
         color: #e0e0e0;
+        transition: color 0.2s ease;
+      }
+
+      .auto-send-label:hover {
+        color: #fff;
       }
 
       .auto-send-label input[type="checkbox"] {
@@ -1351,12 +1488,23 @@ const getEmotes = async () => {
         padding: 6px 10px;
         margin-bottom: 0;
         font-size: 11px;
+        transition: all 0.2s ease;
+      }
+
+      .saved-message-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0, 255, 136, 0.2);
       }
 
       .saved-message-btn.active {
         background-color: rgba(0, 255, 136, 0.3);
         border-color: #00ff88;
         color: #00ff88;
+      }
+
+      .saved-message-btn.active:hover {
+        background-color: rgba(0, 255, 136, 0.4);
+        box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
       }
 
       .saved-message-btn.combo-btn {
@@ -1367,6 +1515,7 @@ const getEmotes = async () => {
 
       .saved-message-btn.combo-btn:hover {
         background-color: rgba(255, 100, 100, 0.25);
+        box-shadow: 0 2px 8px rgba(255, 100, 100, 0.2);
       }
 
       .saved-message-btn.delete-btn {
@@ -1375,6 +1524,11 @@ const getEmotes = async () => {
         color: #ff6464;
         min-width: 30px;
         padding: 6px;
+      }
+
+      .saved-message-btn.delete-btn:hover {
+        background-color: rgba(255, 100, 100, 0.25);
+        box-shadow: 0 2px 8px rgba(255, 100, 100, 0.2);
       }
 
       .history-item {
@@ -1409,6 +1563,12 @@ const getEmotes = async () => {
         padding: 6px 10px;
         margin-bottom: 0;
         font-size: 11px;
+        transition: all 0.2s ease;
+      }
+
+      .history-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0, 255, 136, 0.2);
       }
 
       .empty-state {
@@ -1447,14 +1607,15 @@ const getEmotes = async () => {
     checkAndAutoSendTts()
   }
   
-  // Initialize emote search with default value
+  // Initialize emote search with default value and show results
   const selectedEmoteInput = document.getElementById('selectedemote')
   if (selectedEmoteInput) {
     const defaultEmote = emotes.find(e => e.name === 'emojiLol')
     if (defaultEmote) {
       activeEmote = defaultEmote
-      document.getElementById('emotepreview').src = defaultEmote.image
     }
+    // Show all emotes by default
+    handleEmoteSearch()
   }
 }
 
@@ -1530,9 +1691,12 @@ const isSongRequest = (message) => {
 }
 
 const sendMessage = message => {
+  const now = Date.now()
+  
   // Check if it's a TTS message and start cooldown
   if (isTtsMessage(message)) {
-    ttsCooldownEndTime = Date.now() + ttsCooldownDuration
+    StorageRepo.setLastTtsTimestamp(now)
+    ttsCooldownEndTime = now + ttsCooldownDuration
     updateCooldownDisplay()
     // Add to history if manually sent (not from auto-send)
     // Note: Chatbox sends are handled by updateCooldownsOnSend, not this function
@@ -1544,7 +1708,8 @@ const sendMessage = message => {
   
   // Check if it's a song request and start cooldown
   if (isSongRequest(message)) {
-    srCooldownEndTime = Date.now() + srCooldownDuration
+    StorageRepo.setLastSrTimestamp(now)
+    srCooldownEndTime = now + srCooldownDuration
     updateCooldownDisplay()
     // Add to history (chatbox sends are handled by updateCooldownsOnSend)
     StorageRepo.addSrHistory(message)
@@ -1920,9 +2085,12 @@ const interceptKickMessageBox = () => {
     
     if (!currentContent.trim()) return
     
+    const now = Date.now()
+    
     // Check if it's a TTS message and update cooldown + history
     if (isTtsMessage(currentContent)) {
-      ttsCooldownEndTime = Date.now() + ttsCooldownDuration
+      StorageRepo.setLastTtsTimestamp(now)
+      ttsCooldownEndTime = now + ttsCooldownDuration
       updateCooldownDisplay()
       // Add to history (manually sent from chatbox)
       StorageRepo.addTtsHistory(currentContent.trim())
@@ -1931,7 +2099,8 @@ const interceptKickMessageBox = () => {
     
     // Check if it's a song request and update cooldown + history
     if (isSongRequest(currentContent)) {
-      srCooldownEndTime = Date.now() + srCooldownDuration
+      StorageRepo.setLastSrTimestamp(now)
+      srCooldownEndTime = now + srCooldownDuration
       updateCooldownDisplay()
       // Add to history (manually sent from chatbox)
       StorageRepo.addSrHistory(currentContent.trim())
@@ -2164,19 +2333,25 @@ const updateTtsPreviewInfo = (selectedWords, voice, message) => {
     return div.innerHTML
   }
   
+  infoDiv.style.display = 'block'
   infoDiv.innerHTML = `
-    <div class="tts-info-header">TTS Preview</div>
-    <div class="tts-info-row">
-      <span class="tts-info-label">Voice:</span>
-      <span class="tts-info-value">${escapeHtml(voice)}</span>
+    <div class="tts-preview-header">
+      <span class="tts-preview-title">TTS Preview</span>
+      <button class="tts-preview-close" onclick="closeTtsPreview()" title="Close">✕</button>
     </div>
-    <div class="tts-info-row">
-      <span class="tts-info-label">Words:</span>
-      <span class="tts-info-value">${wordCount} (${uniqueWords.length} unique)</span>
-    </div>
-    <div class="tts-info-row" style="flex-direction: column; align-items: flex-start; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-      <span class="tts-info-label" style="margin-bottom: 8px; font-size: 14px;">Message:</span>
-      <span class="tts-info-value tts-message-preview">${escapeHtml(message)}</span>
+    <div class="tts-preview-content">
+      <div class="tts-info-row">
+        <span class="tts-info-label">Voice:</span>
+        <span class="tts-info-value">${escapeHtml(voice)}</span>
+      </div>
+      <div class="tts-info-row">
+        <span class="tts-info-label">Words:</span>
+        <span class="tts-info-value">${wordCount} (${uniqueWords.length} unique)</span>
+      </div>
+      <div class="tts-info-row" style="flex-direction: column; align-items: flex-start; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+        <span class="tts-info-label" style="margin-bottom: 8px; font-size: 14px;">Message:</span>
+        <span class="tts-info-value tts-message-preview">${escapeHtml(message)}</span>
+      </div>
     </div>
   `
 }
@@ -2188,7 +2363,7 @@ setInterval(() => {
   const wordsCountEl = document.getElementById('words-count')
   if (wordsCountEl) {
     const filteredCount = getFilteredWords().length
-    wordsCountEl.textContent = `Valid words: ${filteredCount}`
+    wordsCountEl.textContent = `Word list: ${filteredCount}`
   }
 
   console.log(
