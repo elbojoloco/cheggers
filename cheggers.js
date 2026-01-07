@@ -233,7 +233,7 @@ const lastTtsTimestamp = StorageRepo.getLastTtsTimestamp()
 let ttsCooldownEndTime = lastTtsTimestamp > 0 ? lastTtsTimestamp + ttsCooldownDuration : 0
 
 // Song request cooldown tracking
-const srCooldownDuration = 600000 // 10 minutes in milliseconds
+const srCooldownDuration = 900000 // 15 minutes in milliseconds
 // Load last SR timestamp and calculate cooldown end time
 const lastSrTimestamp = StorageRepo.getLastSrTimestamp()
 let srCooldownEndTime = lastSrTimestamp > 0 ? lastSrTimestamp + srCooldownDuration : 0
