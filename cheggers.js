@@ -141,6 +141,9 @@ let currentTtsMessage = ''
 // Minimize state
 let isMinimized = false
 
+// Words collection for TTS
+let words = []
+
 /**
  * !!! STOP EDITING BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING !!!
  */
@@ -891,6 +894,81 @@ const fillKickMessageInput = (message) => {
   return true
 }
 
+// Find Kick message box placeholder
+const findKickPlaceholder = () => {
+  // Find the message input container
+  const messageInput = document.querySelector('[data-testid="chat-input"]')
+  if (!messageInput) return null
+  
+  // Look for the placeholder div in the relative container
+  const container = messageInput.closest('.relative') || messageInput.parentElement
+  if (!container) return null
+  
+  // Use the exact selector: div with pointer-events-none and absolute classes
+  const placeholder = container.querySelector('div.pointer-events-none.absolute')
+  
+  // Verify it's the right one by checking if it contains "Send" or "message" or "TTS Cooldown"
+  if (placeholder && (
+    placeholder.textContent.includes('Send') || 
+    placeholder.textContent.includes('message') ||
+    placeholder.textContent.includes('TTS Cooldown')
+  )) {
+    return placeholder
+  }
+  
+  // Fallback: search by text content
+  const placeholderByText = Array.from(container.querySelectorAll('div')).find(
+    el => el.textContent.trim() === 'Send a message' || el.textContent.includes('TTS Cooldown')
+  )
+  return placeholderByText || null
+}
+
+// Update TTS cooldown display
+const updateTtsCooldownDisplay = () => {
+  const cooldownDiv = document.getElementById('tts-cooldown')
+  const kickPlaceholder = findKickPlaceholder()
+  
+  const updateTimer = () => {
+    const timeRemaining = ttsCooldownEndTime - Date.now()
+    
+    if (timeRemaining > 0) {
+      const seconds = Math.ceil(timeRemaining / 1000)
+      const minutes = Math.floor(seconds / 60)
+      const secs = seconds % 60
+      const cooldownText = `TTS Cooldown: ${minutes}:${secs.toString().padStart(2, '0')}`
+      
+      // Update overlay cooldown display
+      if (cooldownDiv) {
+        cooldownDiv.textContent = cooldownText
+        cooldownDiv.classList.add('active')
+      }
+      
+      // Update Kick message box placeholder
+      if (kickPlaceholder) {
+        kickPlaceholder.textContent = cooldownText
+        // Make it more visible during cooldown
+        kickPlaceholder.style.color = '#ff6464'
+      }
+      
+      setTimeout(updateTimer, 1000)
+    } else {
+      // Update overlay cooldown display
+      if (cooldownDiv) {
+        cooldownDiv.textContent = 'TTS Ready'
+        cooldownDiv.classList.remove('active')
+      }
+      
+      // Restore Kick message box placeholder
+      if (kickPlaceholder) {
+        kickPlaceholder.textContent = 'Send a message'
+        kickPlaceholder.style.color = ''
+      }
+    }
+  }
+  
+  updateTimer()
+}
+
 // Track if we've already intercepted to avoid multiple listeners
 let messageBoxIntercepted = false
 
@@ -1030,8 +1108,6 @@ const emoteFlashbang = () => {
 // function onlyUnique(value, index, array) {
 //   return array.indexOf(value) === index
 // }
-
-let words = []
 
 const collectWords = data => {
   if (
@@ -1180,81 +1256,6 @@ const updateTtsPreviewInfo = (selectedWords, voice, message) => {
       <span class="tts-info-value tts-message-preview">${escapeHtml(message)}</span>
     </div>
   `
-}
-
-// Find Kick message box placeholder
-const findKickPlaceholder = () => {
-  // Find the message input container
-  const messageInput = document.querySelector('[data-testid="chat-input"]')
-  if (!messageInput) return null
-  
-  // Look for the placeholder div in the relative container
-  const container = messageInput.closest('.relative') || messageInput.parentElement
-  if (!container) return null
-  
-  // Use the exact selector: div with pointer-events-none and absolute classes
-  const placeholder = container.querySelector('div.pointer-events-none.absolute')
-  
-  // Verify it's the right one by checking if it contains "Send" or "message" or "TTS Cooldown"
-  if (placeholder && (
-    placeholder.textContent.includes('Send') || 
-    placeholder.textContent.includes('message') ||
-    placeholder.textContent.includes('TTS Cooldown')
-  )) {
-    return placeholder
-  }
-  
-  // Fallback: search by text content
-  const placeholderByText = Array.from(container.querySelectorAll('div')).find(
-    el => el.textContent.trim() === 'Send a message' || el.textContent.includes('TTS Cooldown')
-  )
-  return placeholderByText || null
-}
-
-// Update TTS cooldown display
-const updateTtsCooldownDisplay = () => {
-  const cooldownDiv = document.getElementById('tts-cooldown')
-  const kickPlaceholder = findKickPlaceholder()
-  
-  const updateTimer = () => {
-    const timeRemaining = ttsCooldownEndTime - Date.now()
-    
-    if (timeRemaining > 0) {
-      const seconds = Math.ceil(timeRemaining / 1000)
-      const minutes = Math.floor(seconds / 60)
-      const secs = seconds % 60
-      const cooldownText = `TTS Cooldown: ${minutes}:${secs.toString().padStart(2, '0')}`
-      
-      // Update overlay cooldown display
-      if (cooldownDiv) {
-        cooldownDiv.textContent = cooldownText
-        cooldownDiv.classList.add('active')
-      }
-      
-      // Update Kick message box placeholder
-      if (kickPlaceholder) {
-        kickPlaceholder.textContent = cooldownText
-        // Make it more visible during cooldown
-        kickPlaceholder.style.color = '#ff6464'
-      }
-      
-      setTimeout(updateTimer, 1000)
-    } else {
-      // Update overlay cooldown display
-      if (cooldownDiv) {
-        cooldownDiv.textContent = 'TTS Ready'
-        cooldownDiv.classList.remove('active')
-      }
-      
-      // Restore Kick message box placeholder
-      if (kickPlaceholder) {
-        kickPlaceholder.textContent = 'Send a message'
-        kickPlaceholder.style.color = ''
-      }
-    }
-  }
-  
-  updateTimer()
 }
 
 setInterval(() => {
