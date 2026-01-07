@@ -15,7 +15,7 @@ document.body.appendChild(script)
 
 ### Using latest tag
 > I will try to keep this up-to-date, but if I forget, just change the version yourself
-```
+```js
 const tag = '26.1';
 const script = document.createElement('script')
 script.src=`https://cdn.jsdelivr.net/gh/elbojoloco/cheggers@${tag}/cheggers.js`
