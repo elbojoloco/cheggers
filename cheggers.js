@@ -3,129 +3,91 @@ const pusherAppId = '32cbd69e4b950bf97679'
 const pusherCluster = 'us2'
 const kickChatroom = `chatrooms.${kickChannelId}.v2`
 const messageEvent = 'App\\Events\\ChatMessageEvent'
-const emoteMessageRegex = /^\[emote:\d+:[a-zA-Z]+]$/gm
-const cheggersEmote = '[emote:2836117:grossgoreCheggers]'
-const defaultEmote = '[emote:1730794:emojiLol]'
 
-// IDEA: TTS library with quicksend button
-// IDEA: Overwrite emote click handler to bypass rate limit & allow setting the amount of emotes to send
+// Constants
+const WORD_RETENTION_MS = 200000 // ~3.33 minutes
+const MIN_WORDS_REQUIRED = 10
+const HISTORY_LIMIT = 100
+const HISTORY_DISPLAY_LIMIT = 20
+const EMOTE_SEARCH_RESULTS_LIMIT = 20
+const INTERCEPT_RETRY_DELAY = 500
+const INTERCEPT_MAX_ATTEMPTS = 3
+const INTERCEPT_RETRY_INTERVALS = [1000, 3000, 5000]
+const PLACEHOLDER_UPDATE_INTERVAL = 2000
+const WORDS_CLEANUP_INTERVAL = 10000
+const EMOTE_FALLBACK_DELAY = 100
+const AUTO_SEND_RETRY_DELAY = 5000
+const AUTO_SEND_CHECK_DELAY = 500
 
 /**
  * This script is designed to be run in the browser console on the Kick website.
- * It listens for chat messages in the chatroom and counts the number of cheggers
- * emotes used per minute, broadcasting the average every 45 seconds.
- *
- * It also listens for emote messages and counts the number of consecutive emotes
- * used in a row, broadcasting the streak when it ends.
- *
- * FEEL FREE TO PLAY AROUND WITH VARIABLES BELOW
  */
 
-// Decides how many seconds are between CPM broadcasts
-const cheggersPerMinuteBroadcastInterval = 45
-
-// Decides how many seconds should be between streak broadcasts
-const emoteStreakCollectionCooldown = 5
-
-// The current known longest emote streak
-let longestStreak = 0
-
-// How long a streak must be at least to count
-const emoteStreakMinimum = 5
-
-// How many miliseconds to wait before ending an emote streak, if no
-// matching emote is used within this time from the previous one
-// the streak will be broadcasted and reset.
-const emoteStreakInterval = 2000
-
-/**
- * Tate
-mura
-Cena
-Pooh
-tino
-witch
-dmx
-dogg
-randy
-Ebz
-Pegasus
-Hartman
-2pac
-smith
-Keith
-Greta
-jax
-alig
-phil
-mike
-Green
-George
-Woken
-Kermit
-Elmo
-snape
-AngryGore
-Arnold
-Gross
-starwars
-marley
-Butcher
-roz
-Homero
-Krabs
-jr
-gollum
-Cent
-Alex
-Hawking
-vader
-Borat
-plankton
-cartman
-dagoth
-farage
-Kaiba
-Dj
-Trump
-Morgan
-gordon
-buu
-hagrid
-Rogan
-kim
-indian
-ewu
-fat
-spongebob
-drunk
-brian
-Glittery
-yoda
-krusty
- */
-
-// Available TTS voices (static list - user can customize this array)
+// Available TTS voices
 const availableVoices = [
-  'snape',
+  '2pac',
+  'alex',
+  'alig',
+  'angrygore',
+  'arnold',
+  'borat',
+  'brian',
+  'butcher',
+  'cartman',
+  'cent',
+  'cena',
+  'dagoth',
+  'dj',
+  'dmx',
+  'dogg',
+  'drunk',
+  'ebz',
+  'elmo',
+  'ewu',
+  'farage',
+  'fat',
+  'george',
+  'glittery',
+  'gollum',
+  'gordon',
+  'green',
+  'greta',
+  'gross',
+  'hagrid',
+  'hartman',
+  'hawking',
+  'homero',
+  'indian',
+  'jax',
+  'jr',
+  'kaiba',
+  'keith',
+  'kermit',
+  'kim',
+  'krabs',
+  'krusty',
+  'marley',
+  'mike',
+  'morgan',
+  'mura',
+  'pegasus',
   'phil',
   'plankton',
-  'gollum',
-  'witch',
-  'glittery',
-  'krusty',
-  'kim',
-  'spongebob', 
-  'drunk',
-  'brian',
-  'gordon',
-  'kaiba',
-  'yoda',
+  'pooh',
+  'randy',
+  'rogon',
+  'roz',
+  'smith',
+  'snape',
+  'spongebob',
+  'starwars',
+  'tate',
+  'tino',
+  'trump',
   'vader',
-  'jr',
-  'marley',
-  'kermit',
-  'alig',
+  'witch',
+  'woken',
+  'yoda',
 ]
 
 // ============================================================================
@@ -142,7 +104,7 @@ const StorageRepo = {
       return defaultValue
     }
   },
-  
+
   set: (key, value) => {
     try {
       localStorage.setItem(key, JSON.stringify(value))
@@ -152,8 +114,8 @@ const StorageRepo = {
       return false
     }
   },
-  
-  remove: (key) => {
+
+  remove: key => {
     try {
       localStorage.removeItem(key)
       return true
@@ -162,49 +124,53 @@ const StorageRepo = {
       return false
     }
   },
-  
+
   // Specific data accessors
-  getConfig: () => StorageRepo.get('cheggers_config', {
-    selectedVoice: 'snape',
-    maxWords: 32,
-    randomTtsCollapsed: false,
-    emoteSpamCollapsed: false,
-    ttsLibraryCollapsed: false,
-    ttsHistoryCollapsed: false,
-    srHistoryCollapsed: false
-  }),
-  
-  setConfig: (config) => StorageRepo.set('cheggers_config', config),
-  
+  getConfig: () =>
+    StorageRepo.get('cheggers_config', {
+      selectedVoice: 'snape',
+      maxWords: 32,
+      randomTtsCollapsed: false,
+      emoteSpamCollapsed: false,
+      ttsLibraryCollapsed: false,
+      ttsHistoryCollapsed: false,
+      srHistoryCollapsed: false,
+    }),
+
+  setConfig: config => StorageRepo.set('cheggers_config', config),
+
   getSavedMessages: () => StorageRepo.get('cheggers_saved_messages', []),
-  
-  setSavedMessages: (messages) => StorageRepo.set('cheggers_saved_messages', messages),
-  
+
+  setSavedMessages: messages =>
+    StorageRepo.set('cheggers_saved_messages', messages),
+
   getTtsHistory: () => StorageRepo.get('cheggers_tts_history', []),
-  
-  addTtsHistory: (message) => {
+
+  addTtsHistory: message => {
     const history = StorageRepo.getTtsHistory()
-    // Add timestamp and limit to last 100
+    // Add timestamp and limit to last HISTORY_LIMIT
     history.unshift({ message, timestamp: Date.now() })
-    StorageRepo.set('cheggers_tts_history', history.slice(0, 100))
+    StorageRepo.set('cheggers_tts_history', history.slice(0, HISTORY_LIMIT))
   },
-  
+
   getSrHistory: () => StorageRepo.get('cheggers_sr_history', []),
-  
-  addSrHistory: (message) => {
+
+  addSrHistory: message => {
     const history = StorageRepo.getSrHistory()
-    // Add timestamp and limit to last 100
+    // Add timestamp and limit to last HISTORY_LIMIT
     history.unshift({ message, timestamp: Date.now() })
-    StorageRepo.set('cheggers_sr_history', history.slice(0, 100))
+    StorageRepo.set('cheggers_sr_history', history.slice(0, HISTORY_LIMIT))
   },
-  
+
   getLastTtsTimestamp: () => StorageRepo.get('cheggers_last_tts_timestamp', 0),
-  
-  setLastTtsTimestamp: (timestamp) => StorageRepo.set('cheggers_last_tts_timestamp', timestamp),
-  
+
+  setLastTtsTimestamp: timestamp =>
+    StorageRepo.set('cheggers_last_tts_timestamp', timestamp),
+
   getLastSrTimestamp: () => StorageRepo.get('cheggers_last_sr_timestamp', 0),
-  
-  setLastSrTimestamp: (timestamp) => StorageRepo.set('cheggers_last_sr_timestamp', timestamp)
+
+  setLastSrTimestamp: timestamp =>
+    StorageRepo.set('cheggers_last_sr_timestamp', timestamp),
 }
 
 // ============================================================================
@@ -230,13 +196,15 @@ const ttsCooldownDuration = 120000 // 2 minutes in milliseconds
 const ttsCooldownGracePeriod = 3000 // 3 seconds grace period
 // Load last TTS timestamp and calculate cooldown end time
 const lastTtsTimestamp = StorageRepo.getLastTtsTimestamp()
-let ttsCooldownEndTime = lastTtsTimestamp > 0 ? lastTtsTimestamp + ttsCooldownDuration : 0
+let ttsCooldownEndTime =
+  lastTtsTimestamp > 0 ? lastTtsTimestamp + ttsCooldownDuration : 0
 
 // Song request cooldown tracking
 const srCooldownDuration = 900000 // 15 minutes in milliseconds
 // Load last SR timestamp and calculate cooldown end time
 const lastSrTimestamp = StorageRepo.getLastSrTimestamp()
-let srCooldownEndTime = lastSrTimestamp > 0 ? lastSrTimestamp + srCooldownDuration : 0
+let srCooldownEndTime =
+  lastSrTimestamp > 0 ? lastSrTimestamp + srCooldownDuration : 0
 
 // Current TTS message to send
 let currentTtsMessage = ''
@@ -262,34 +230,13 @@ const channel = pusher.subscribe(kickChatroom)
 
 let filteredEmotes = []
 
-// Fuzzy search case insensitive for emotes
-function searchEmote(name) {
-  filteredEmotes = emotes.filter(emote =>
-    emote.name.toLowerCase().includes(name.toLowerCase())
-  )
-
-  console.log(filteredEmotes)
-
-  redrawHtml()
-
-  return filteredEmotes
-}
-
 function getCookie(name) {
   const value = `; ${document.cookie}`
   const parts = value.split(`; ${name}=`)
   if (parts.length === 2) return parts.pop().split(';').shift()
 }
 
-function redrawHtml() {
-  const emoteList = document.getElementById('emotes')
-
-  emoteList.innerHTML = filteredEmotes
-    .map(emote => `<option value="${emote.id}">${emote.name}</option>`)
-    .join('')
-}
-
-const addHtmlToBody = html => {
+function addHtmlToBody(html) {
   const div = document.createElement('div')
   div.innerHTML = html
   document.body.appendChild(div)
@@ -299,19 +246,29 @@ const auth = 'Bearer ' + decodeURI(getCookie('session_token'))
 
 let username = ''
 
-const getUser = async () => {
-  const res = await fetch('https://kick.com/api/v1/user', {
-    headers: {
-      accept: '*/*',
-      'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8,de;q=0.7',
-      authorization: auth,
-      'x-xsrf-token': decodeURI(getCookie('XSRF-TOKEN')),
-    },
-  })
+async function getUser() {
+  try {
+    const res = await fetch('https://kick.com/api/v1/user', {
+      headers: {
+        accept: '*/*',
+        'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8,de;q=0.7',
+        authorization: auth,
+        'x-xsrf-token': decodeURI(getCookie('XSRF-TOKEN')),
+      },
+    })
 
-  const data = await res.json()
+    if (!res.ok) {
+      console.error('Failed to fetch user:', res.status)
+      return
+    }
 
-  username = data.username
+    const data = await res.json()
+    if (data && data.username) {
+      username = data.username
+    }
+  } catch (error) {
+    console.error('Error fetching user:', error)
+  }
 }
 
 getUser()
@@ -320,33 +277,43 @@ const emotes = []
 
 let activeEmote = null
 
-const handleEmoteSearch = () => {
+function handleEmoteSearch() {
   const searchInput = document.getElementById('selectedemote')
+  if (!searchInput) return
+
   const searchValue = searchInput.value.toLowerCase().trim()
   const resultsContainer = document.getElementById('emote-search-results')
-  
+
   if (!resultsContainer) return
-  
+
   // Filter emotes based on search (show all if empty)
-  const matchingEmotes = searchValue === '' 
-    ? emotes 
-    : emotes.filter(emote => emote.name.toLowerCase().includes(searchValue))
-  
+  const matchingEmotes =
+    searchValue === ''
+      ? emotes
+      : emotes.filter(emote => emote.name.toLowerCase().includes(searchValue))
+
   // Check if search exactly matches an emote name
   const exactMatch = emotes.find(e => e.name.toLowerCase() === searchValue)
   activeEmote = exactMatch || null
-  
+
   // Display matching emotes (always show, even when empty)
   resultsContainer.innerHTML = matchingEmotes
-    .slice(0, 20) // Limit to 20 results for performance
-    .map(emote => `
-      <div class="emote-search-item ${activeEmote && activeEmote.name === emote.name ? 'active' : ''}" 
+    .slice(0, EMOTE_SEARCH_RESULTS_LIMIT)
+    .map(
+      emote => `
+      <div class="emote-search-item ${
+        activeEmote && activeEmote.name === emote.name ? 'active' : ''
+      }" 
            onclick="selectEmote('${emote.name}')">
-        <img src="${emote.image}" alt="${emote.name}" class="emote-search-item-img" />
+        <img src="${emote.image}" alt="${
+        emote.name
+      }" class="emote-search-item-img" />
         <span class="emote-search-item-name">${emote.name}</span>
       </div>
-    `).join('')
-  
+    `
+    )
+    .join('')
+
   if (matchingEmotes.length > 0) {
     resultsContainer.classList.add('show')
   } else {
@@ -354,24 +321,21 @@ const handleEmoteSearch = () => {
   }
 }
 
-const selectEmote = (emoteName) => {
+function selectEmote(emoteName) {
   const searchInput = document.getElementById('selectedemote')
+  if (!searchInput) return
   searchInput.value = emoteName
   handleEmoteSearch()
 }
 
-const updateEmotePreviewSrc = () => {
-  handleEmoteSearch()
-}
-
 // Toggle minimize/maximize
-const toggleMinimize = () => {
+function toggleMinimize() {
   isMinimized = !isMinimized
   const cheggersDiv = document.querySelector('.cheggers')
   const cheggersContent = document.getElementById('cheggers-content')
   const minimizeBtn = document.getElementById('minimize-btn')
   const header = document.querySelector('.cheggers-header')
-  
+
   if (cheggersDiv && cheggersContent && minimizeBtn) {
     if (isMinimized) {
       cheggersDiv.classList.add('minimized')
@@ -392,50 +356,74 @@ const toggleMinimize = () => {
 }
 
 // Toggle section collapse
-const toggleSection = (sectionName) => {
-  let collapsed = false
-  const contentId = sectionName === 'randomTts' ? 'random-tts-content' :
-                    sectionName === 'emoteSpam' ? 'emote-spam-content' :
-                    sectionName === 'ttsLibrary' ? 'tts-library-content' :
-                    sectionName === 'ttsHistory' ? 'tts-history-content' :
-                    'sr-history-content'
-  
-  const content = document.getElementById(contentId)
-  const header = content?.closest('.collapsible-section')?.querySelector('.section-header')
-  const icon = header?.querySelector('.collapse-icon')
-  
-  if (sectionName === 'randomTts') {
-    randomTtsCollapsed = !randomTtsCollapsed
-    collapsed = randomTtsCollapsed
-  } else if (sectionName === 'emoteSpam') {
-    emoteSpamCollapsed = !emoteSpamCollapsed
-    collapsed = emoteSpamCollapsed
-  } else if (sectionName === 'ttsLibrary') {
-    ttsLibraryCollapsed = !ttsLibraryCollapsed
-    collapsed = ttsLibraryCollapsed
-  } else if (sectionName === 'ttsHistory') {
-    ttsHistoryCollapsed = !ttsHistoryCollapsed
-    collapsed = ttsHistoryCollapsed
-  } else if (sectionName === 'srHistory') {
-    srHistoryCollapsed = !srHistoryCollapsed
-    collapsed = srHistoryCollapsed
+function toggleSection(sectionName) {
+  const sectionConfig = {
+    randomTts: {
+      contentId: 'random-tts-content',
+      getState: () => randomTtsCollapsed,
+      setState: val => {
+        randomTtsCollapsed = val
+      },
+    },
+    emoteSpam: {
+      contentId: 'emote-spam-content',
+      getState: () => emoteSpamCollapsed,
+      setState: val => {
+        emoteSpamCollapsed = val
+      },
+    },
+    ttsLibrary: {
+      contentId: 'tts-library-content',
+      getState: () => ttsLibraryCollapsed,
+      setState: val => {
+        ttsLibraryCollapsed = val
+      },
+    },
+    ttsHistory: {
+      contentId: 'tts-history-content',
+      getState: () => ttsHistoryCollapsed,
+      setState: val => {
+        ttsHistoryCollapsed = val
+      },
+    },
+    srHistory: {
+      contentId: 'sr-history-content',
+      getState: () => srHistoryCollapsed,
+      setState: val => {
+        srHistoryCollapsed = val
+      },
+    },
   }
-  
+
+  const config = sectionConfig[sectionName]
+  if (!config) return
+
+  const content = document.getElementById(config.contentId)
+  if (!content) return
+
+  const header = content
+    .closest('.collapsible-section')
+    ?.querySelector('.section-header')
+  const icon = header?.querySelector('.collapse-icon')
+
+  // Toggle the state
+  const currentState = config.getState()
+  config.setState(!currentState)
+  const collapsed = config.getState()
+
   saveConfig()
-  
-  if (content) {
-    if (collapsed) {
-      content.classList.add('collapsed')
-      if (icon) icon.textContent = '▶'
-    } else {
-      content.classList.remove('collapsed')
-      if (icon) icon.textContent = '▼'
-    }
+
+  if (collapsed) {
+    content.classList.add('collapsed')
+    if (icon) icon.textContent = '▶'
+  } else {
+    content.classList.remove('collapsed')
+    if (icon) icon.textContent = '▼'
   }
 }
 
 // Close TTS preview
-const closeTtsPreview = () => {
+function closeTtsPreview() {
   const preview = document.getElementById('tts-preview-info')
   if (preview) {
     preview.style.display = 'none'
@@ -448,7 +436,7 @@ const closeTtsPreview = () => {
 }
 
 // Save config to localStorage (autoSendTts is not stored)
-const saveConfig = () => {
+function saveConfig() {
   StorageRepo.setConfig({
     selectedVoice,
     maxWords,
@@ -456,20 +444,20 @@ const saveConfig = () => {
     emoteSpamCollapsed,
     ttsLibraryCollapsed,
     ttsHistoryCollapsed,
-    srHistoryCollapsed
+    srHistoryCollapsed,
   })
 }
 
 // Toggle auto-send
-const toggleAutoSend = () => {
+function toggleAutoSend() {
   autoSendTts = document.getElementById('auto-send-toggle').checked
   saveConfig()
-  
+
   // Disable saved message auto-send if enabling random TTS
   if (autoSendTts && autoSendMessageId) {
     toggleSavedMessageAutoSend(autoSendMessageId)
   }
-  
+
   // If enabling, check if we should send immediately
   if (autoSendTts && !autoSendMessageId) {
     checkAndAutoSendTts()
@@ -477,57 +465,57 @@ const toggleAutoSend = () => {
 }
 
 // Update max words
-const updateMaxWords = (value) => {
+function updateMaxWords(value) {
   maxWords = parseInt(value)
   saveConfig()
   const valueDisplay = document.getElementById('max-words-value')
   if (valueDisplay) {
     valueDisplay.textContent = maxWords
   }
-  
+
   // Live-generate TTS preview on change
-  if (words.length >= 10) {
+  if (words.length >= MIN_WORDS_REQUIRED) {
     generateTtsPreview()
   }
 }
 
-// Generate TTS preview (without sending)
-const generateTtsPreview = () => {
+// Generate TTS preview
+function generateTtsPreview() {
   const onlyWords = getFilteredWords()
-  
+
   if (onlyWords.length === 0) {
     return
   }
-  
+
   if (!selectedVoice) {
     return
   }
-  
+
   const shuffled = onlyWords.sort(() => 0.5 - Math.random())
   const selected = shuffled.slice(0, Math.min(maxWords, shuffled.length))
-  const selectedWithoutUrls = selected.filter(w => !containsUrl(w))
-  
-  if (selectedWithoutUrls.length === 0) {
+
+  if (selected.length === 0) {
     return
   }
-  
-  const voice = selectedVoice === 'random' 
-    ? availableVoices[Math.floor(Math.random() * availableVoices.length)]
-    : selectedVoice
-  
-  const message = `!${voice} ${selectedWithoutUrls.join(' ')}${
+
+  const voice =
+    selectedVoice === 'random'
+      ? availableVoices[Math.floor(Math.random() * availableVoices.length)]
+      : selectedVoice
+
+  const message = `!${voice} ${selected.join(' ')}${
     p[Math.floor(Math.random() * p.length)]
   }`
-  
+
   // Store the message for sending
   currentTtsMessage = message
-  
+
   // Preview in Kick's message input
   fillKickMessageInput(message)
-  
+
   // Update preview display
-  updateTtsPreviewInfo(selectedWithoutUrls, voice, message)
-  
+  updateTtsPreviewInfo(selected, voice, message)
+
   // Show the Send button
   const sendBtn = document.getElementById('send-tts-btn')
   if (sendBtn) {
@@ -535,108 +523,110 @@ const generateTtsPreview = () => {
   }
 }
 
+// Check if cooldown is ready (with grace period)
+function isCooldownReady(cooldownEndTime) {
+  const timeRemaining = cooldownEndTime - Date.now()
+  return timeRemaining <= -ttsCooldownGracePeriod
+}
+
+// Get next check delay based on cooldown
+function getNextCheckDelay(cooldownEndTime) {
+  const timeRemaining = cooldownEndTime - Date.now()
+  return Math.max(0, timeRemaining + ttsCooldownGracePeriod + 100)
+}
+
+// Handle auto-send for saved message
+function handleSavedMessageAutoSend() {
+  const savedMsg = savedMessages.find(m => m.id === autoSendMessageId)
+  if (!savedMsg) return false
+
+  if (!isCooldownReady(ttsCooldownEndTime)) {
+    setTimeout(checkAndAutoSendTts, getNextCheckDelay(ttsCooldownEndTime))
+    return true
+  }
+
+  autoSendCheckInProgress = true
+  sendMessage(savedMsg.message)
+  autoSendCheckInProgress = false
+  setTimeout(
+    checkAndAutoSendTts,
+    ttsCooldownDuration + ttsCooldownGracePeriod + 100
+  )
+  return true
+}
+
+// Handle auto-send for random TTS
+function handleRandomTtsAutoSend() {
+  if (!autoSendTts) return false
+
+  if (!isCooldownReady(ttsCooldownEndTime)) {
+    setTimeout(checkAndAutoSendTts, getNextCheckDelay(ttsCooldownEndTime))
+    return true
+  }
+
+  const onlyWords = getFilteredWords()
+  if (onlyWords.length < MIN_WORDS_REQUIRED) {
+    autoSendCheckInProgress = false
+    setTimeout(checkAndAutoSendTts, AUTO_SEND_RETRY_DELAY)
+    return true
+  }
+
+  autoSendCheckInProgress = true
+  sendRandomTts()
+
+  if (currentTtsMessage) {
+    setTimeout(() => {
+      sendTtsMessage()
+      autoSendCheckInProgress = false
+      setTimeout(
+        checkAndAutoSendTts,
+        ttsCooldownDuration + ttsCooldownGracePeriod + 100
+      )
+    }, AUTO_SEND_CHECK_DELAY)
+    return true
+  }
+
+  autoSendCheckInProgress = false
+  setTimeout(checkAndAutoSendTts, AUTO_SEND_RETRY_DELAY)
+  return true
+}
+
 // Check and auto-send TTS if cooldown is over
-const checkAndAutoSendTts = () => {
+function checkAndAutoSendTts() {
   if (autoSendCheckInProgress) return
-  
+
   // Check if we have a saved message set to auto-send
   if (autoSendMessageId) {
-    const savedMsg = savedMessages.find(m => m.id === autoSendMessageId)
-    if (savedMsg) {
-      const timeRemaining = ttsCooldownEndTime - Date.now()
-      if (timeRemaining > -ttsCooldownGracePeriod) {
-        // Wait for grace period
-        setTimeout(checkAndAutoSendTts, Math.max(0, timeRemaining + ttsCooldownGracePeriod + 100))
-        return
-      }
-      
-      autoSendCheckInProgress = true
-      sendMessage(savedMsg.message)
-      autoSendCheckInProgress = false
-      setTimeout(checkAndAutoSendTts, ttsCooldownDuration + ttsCooldownGracePeriod + 100)
-      return
-    }
+    if (handleSavedMessageAutoSend()) return
   }
-  
+
   // Otherwise check random TTS auto-send
-  if (!autoSendTts) return
-  
-  const timeRemaining = ttsCooldownEndTime - Date.now()
-  if (timeRemaining > -ttsCooldownGracePeriod) {
-    // Wait for grace period
-    setTimeout(checkAndAutoSendTts, Math.max(0, timeRemaining + ttsCooldownGracePeriod + 100))
-    return
-  }
-  
-  autoSendCheckInProgress = true
-  
-  // Cooldown is over (with grace period), generate and send
-  const onlyWords = getFilteredWords()
-  if (onlyWords.length >= 10) {
-    sendRandomTts()
-    // Send immediately if we have a message
-    if (currentTtsMessage) {
-      setTimeout(() => {
-        sendTtsMessage()
-        autoSendCheckInProgress = false
-        // After sending, check again after cooldown duration + grace period
-        setTimeout(checkAndAutoSendTts, ttsCooldownDuration + ttsCooldownGracePeriod + 100)
-      }, 500)
-      return
-    }
-  }
-  
-  autoSendCheckInProgress = false
-  // If we couldn't send, check again in a bit
-  setTimeout(checkAndAutoSendTts, 5000)
+  handleRandomTtsAutoSend()
 }
 
 // Toggle voice radio button
-const selectVoice = (voiceName) => {
+function selectVoice(voiceName) {
   selectedVoice = voiceName
   saveConfig()
-  
-  // Update all radio buttons and their visual states
+
+  // Update all radio buttons - CSS handles styling via :checked pseudo-class
   availableVoices.forEach(voice => {
     const radioBtn = document.getElementById(`voice-${voice}`)
     if (radioBtn) {
-      radioBtn.checked = (voice === voiceName)
-      // Find the label that contains this radio button
-      const label = radioBtn.closest('.voice-radio-label')
-      if (label) {
-        const buttonSpan = label.querySelector('.voice-radio-button')
-        if (buttonSpan) {
-          if (voice === voiceName) {
-            buttonSpan.classList.add('active')
-          } else {
-            buttonSpan.classList.remove('active')
-          }
-        }
-      }
+      radioBtn.checked = voice === voiceName
     }
   })
-  
+
   // Update Random radio button
   const randomRadio = document.getElementById('voice-random')
   if (randomRadio) {
-    randomRadio.checked = (voiceName === 'random')
-    const randomLabel = randomRadio.closest('.voice-radio-label')
-    if (randomLabel) {
-      const randomButtonSpan = randomLabel.querySelector('.voice-radio-button')
-      if (randomButtonSpan) {
-        if (voiceName === 'random') {
-          randomButtonSpan.classList.add('active')
-        } else {
-          randomButtonSpan.classList.remove('active')
-        }
-      }
-    }
+    randomRadio.checked = voiceName === 'random'
   }
-  
+
   console.log('Voice selected:', selectedVoice)
 }
 
-const getEmotes = async () => {
+async function getEmotes() {
   const res = await fetch('https://kick.com/emotes/grossgore', {
     headers: {
       accept: 'application/json',
@@ -676,7 +666,9 @@ const getEmotes = async () => {
             <h2 class="section-title">Random TTS</h2>
             <span class="collapse-icon">${randomTtsCollapsed ? '▶' : '▼'}</span>
           </div>
-          <div id="random-tts-content" class="section-content ${randomTtsCollapsed ? 'collapsed' : ''}">
+          <div id="random-tts-content" class="section-content ${
+            randomTtsCollapsed ? 'collapsed' : ''
+          }">
           <div class="cheggers-section-inner">
             <label class="cheggers-label">TTS Voices</label>
             <div class="voices-radio-container">
@@ -689,9 +681,11 @@ const getEmotes = async () => {
                     ${selectedVoice === 'random' ? 'checked' : ''}
                     onchange="selectVoice('random')"
                   />
-                  <span class="voice-radio-button ${selectedVoice === 'random' ? 'active' : ''}">Random</span>
+                  <span class="voice-radio-button">Random</span>
                 </label>
-                ${availableVoices.map(voice => `
+                ${availableVoices
+                  .map(
+                    voice => `
                   <label class="voice-radio-label">
                     <input 
                       type="radio" 
@@ -701,14 +695,18 @@ const getEmotes = async () => {
                       ${selectedVoice === voice ? 'checked' : ''}
                       onchange="selectVoice('${voice}')"
                     />
-                    <span class="voice-radio-button ${selectedVoice === voice ? 'active' : ''}">${voice}</span>
+                    <span class="voice-radio-button">${voice}</span>
                   </label>
-                `).join('')}
+                `
+                  )
+                  .join('')}
             </div>
           </div>
           <div class="auto-send-container">
             <label class="auto-send-label">
-              <input type="checkbox" id="auto-send-toggle" ${autoSendTts ? 'checked' : ''} onchange="toggleAutoSend()" />
+              <input type="checkbox" id="auto-send-toggle" ${
+                autoSendTts ? 'checked' : ''
+              } onchange="toggleAutoSend()" />
               <span>Auto-send TTS when cooldown ends</span>
             </label>
           </div>
@@ -732,7 +730,9 @@ const getEmotes = async () => {
             Send TTS
           </button>
           <div class="words-stats">
-            <span id="words-count">Word list: ${getFilteredWords().length}</span>
+            <span id="words-count">Word list: ${
+              getFilteredWords().length
+            }</span>
           </div>
           </div>
         </div>
@@ -742,7 +742,9 @@ const getEmotes = async () => {
             <h2 class="section-title">Emote Spam</h2>
             <span class="collapse-icon">${emoteSpamCollapsed ? '▶' : '▼'}</span>
           </div>
-          <div id="emote-spam-content" class="section-content ${emoteSpamCollapsed ? 'collapsed' : ''}">
+          <div id="emote-spam-content" class="section-content ${
+            emoteSpamCollapsed ? 'collapsed' : ''
+          }">
           <label class="cheggers-label" for="selectedemote">Emote to spam</label>
           <input type="text" id="selectedemote" class="cheggers-input" placeholder="Search emotes" value="emojiLol" onInput="handleEmoteSearch()" />
           <div id="emote-search-results" class="emote-search-results show"></div>
@@ -764,9 +766,13 @@ const getEmotes = async () => {
         <div class="cheggers-section collapsible-section">
           <div class="section-header" onclick="toggleSection('ttsLibrary')">
             <h2 class="section-title">TTS Library</h2>
-            <span class="collapse-icon">${ttsLibraryCollapsed ? '▶' : '▼'}</span>
+            <span class="collapse-icon">${
+              ttsLibraryCollapsed ? '▶' : '▼'
+            }</span>
           </div>
-          <div id="tts-library-content" class="section-content ${ttsLibraryCollapsed ? 'collapsed' : ''}">
+          <div id="tts-library-content" class="section-content ${
+            ttsLibraryCollapsed ? 'collapsed' : ''
+          }">
           <div class="saved-message-add">
             <input type="text" id="new-saved-message" class="cheggers-input" placeholder="Enter TTS message to save" />
             <button class="cheggers-btn" onclick="saveTtsMessage(document.getElementById('new-saved-message').value); document.getElementById('new-saved-message').value = '';">Save</button>
@@ -778,9 +784,13 @@ const getEmotes = async () => {
         <div class="cheggers-section collapsible-section">
           <div class="section-header" onclick="toggleSection('ttsHistory')">
             <h2 class="section-title">TTS History</h2>
-            <span class="collapse-icon">${ttsHistoryCollapsed ? '▶' : '▼'}</span>
+            <span class="collapse-icon">${
+              ttsHistoryCollapsed ? '▶' : '▼'
+            }</span>
           </div>
-          <div id="tts-history-content" class="section-content ${ttsHistoryCollapsed ? 'collapsed' : ''}">
+          <div id="tts-history-content" class="section-content ${
+            ttsHistoryCollapsed ? 'collapsed' : ''
+          }">
           <div id="tts-history-list" class="history-list"></div>
           </div>
         </div>
@@ -790,7 +800,9 @@ const getEmotes = async () => {
             <h2 class="section-title">Song Request History</h2>
             <span class="collapse-icon">${srHistoryCollapsed ? '▶' : '▼'}</span>
           </div>
-          <div id="sr-history-content" class="section-content ${srHistoryCollapsed ? 'collapsed' : ''}">
+          <div id="sr-history-content" class="section-content ${
+            srHistoryCollapsed ? 'collapsed' : ''
+          }">
           <div id="sr-history-list" class="history-list"></div>
           </div>
         </div>
@@ -1202,8 +1214,7 @@ const getEmotes = async () => {
         color: #fff;
       }
 
-      .voice-radio:checked + .voice-radio-button,
-      .voice-radio-button.active {
+      .voice-radio:checked + .voice-radio-button {
         background-color: rgba(0, 255, 136, 0.2);
         color: #00ff88;
         border-color: #00ff88;
@@ -1580,37 +1591,38 @@ const getEmotes = async () => {
       }
     </style>
   `)
-  
+
   // Initialize cooldown display
   updateCooldownDisplay()
-  
+
   // Initialize words count display
   const wordsCountEl = document.getElementById('words-count')
   if (wordsCountEl) {
     const filteredCount = getFilteredWords().length
     wordsCountEl.textContent = `Word list: ${filteredCount}`
   }
-  
+
   // Initialize saved messages and history
   renderSavedMessages()
   renderTtsHistory()
   renderSrHistory()
-  
+
   // Find auto-send message ID
   const autoSendMsg = savedMessages.find(m => m.autoSend)
   if (autoSendMsg) {
     autoSendMessageId = autoSendMsg.id
   }
-  
+
   // Start auto-send check if enabled
   if (autoSendTts || autoSendMessageId) {
     checkAndAutoSendTts()
   }
-  
+
   // Initialize emote search with default value and show results
   const selectedEmoteInput = document.getElementById('selectedemote')
   if (selectedEmoteInput) {
-    const defaultEmote = emotes.find(e => e.name === 'emojiLol')
+    const defaultEmoteName = 'emojiLol'
+    const defaultEmote = emotes.find(e => e.name === defaultEmoteName)
     if (defaultEmote) {
       activeEmote = defaultEmote
     }
@@ -1621,78 +1633,88 @@ const getEmotes = async () => {
 
 getEmotes()
 
-const quickEmoteHolder = document.getElementById('quick-emotes-holder');
+const quickEmoteHolder = document.getElementById('quick-emotes-holder')
 
 if (quickEmoteHolder) {
   quickEmoteHolder.addEventListener('click', e => {
     /**
      * Example src: https://files.kick.com/emotes/3303101/fullsize
-     * 
+     *
      * Get the emote ID from the src using regex and get the emote object from the emotes array by the id
      */
-    const emoteId = e.target.src.match(/emotes\/(\d+)/)[1];
-    
-    if (!emoteId) return;
+    if (!e.target || !e.target.src) return
 
-    const emote = emotes.find(e => e.id === parseInt(emoteId));
+    const match = e.target.src.match(/emotes\/(\d+)/)
+    if (!match || !match[1]) return
 
-    if (!emote) return;
+    const emoteId = match[1]
+    const emote = emotes.find(em => em.id === parseInt(emoteId))
+
+    if (!emote) return
 
     /**
      * Overwrite the fetch function to cancel the first next emote message request
-     * If within 100ms such a request is cancelled, don't send another emote message.
-     * If there was no such request in 100ms (client side rate limit), send the emote message.
-     * Then restore the 
+     * If within EMOTE_FALLBACK_DELAY such a request is cancelled, don't send another emote message.
+     * If there was no such request in EMOTE_FALLBACK_DELAY (client side rate limit), send the emote message.
+     * Then restore the fetch function to the original function.
      */
 
-    const { fetch: originalFetch } = window;
+    const { fetch: originalFetch } = window
+    let fetchRestored = false
 
     const sendMessageFallback = setTimeout(() => {
-      sendMessage(`[emote:${emote.id}:${emote.name}]`);
-      e.stopPropagation()
-    }, 100)
+      if (!fetchRestored) {
+        sendMessage(`[emote:${emote.id}:${emote.name}]`)
+        e.stopPropagation()
+      }
+    }, EMOTE_FALLBACK_DELAY)
 
-    window.fetch = async (...args) => {
-        let [resource, config] = args;
+    window.fetch = async function (...args) {
+      let [resource, config] = args
 
-        // request interceptor starts
-        if (resource.includes('https://kick.com/api/v2/messages/send/')) {
-            clearTimeout(sendMessageFallback);
-        }
-        // request interceptor ends
+      // request interceptor starts
+      if (resource.includes('https://kick.com/api/v2/messages/send/')) {
+        clearTimeout(sendMessageFallback)
+        fetchRestored = true
+        window.fetch = originalFetch
+      }
+      // request interceptor ends
 
-        const response = await originalFetch(resource, config);
-        
-        window.fetch = originalFetch;
+      const response = await originalFetch(resource, config)
 
-        // response interceptor here
-        return response;
-    };
+      if (!fetchRestored) {
+        window.fetch = originalFetch
+        fetchRestored = true
+      }
+
+      // response interceptor here
+      return response
+    }
   })
 }
 
 // Helper function to check if a message is a TTS message
-const isTtsMessage = (message) => {
+function isTtsMessage(message) {
   const trimmed = message.trim()
   if (!trimmed.startsWith('!')) return false
-  
+
   // Extract the voice name (everything after ! until first space)
   const voiceMatch = trimmed.match(/^!(\w+)/)
   if (!voiceMatch) return false
-  
+
   const voiceName = voiceMatch[1].toLowerCase()
   return availableVoices.includes(voiceName)
 }
 
 // Helper function to check if a message is a song request
-const isSongRequest = (message) => {
+function isSongRequest(message) {
   const trimmed = message.trim()
   return trimmed.toLowerCase().startsWith('!sr ')
 }
 
-const sendMessage = message => {
+function sendMessage(message) {
   const now = Date.now()
-  
+
   // Check if it's a TTS message and start cooldown
   if (isTtsMessage(message)) {
     StorageRepo.setLastTtsTimestamp(now)
@@ -1705,7 +1727,7 @@ const sendMessage = message => {
       renderTtsHistory()
     }
   }
-  
+
   // Check if it's a song request and start cooldown
   if (isSongRequest(message)) {
     StorageRepo.setLastSrTimestamp(now)
@@ -1715,7 +1737,7 @@ const sendMessage = message => {
     StorageRepo.addSrHistory(message)
     renderSrHistory()
   }
-  
+
   fetch(`https://kick.com/api/v2/messages/send/${kickChannelId}`, {
     headers: {
       authorization: auth,
@@ -1728,28 +1750,30 @@ const sendMessage = message => {
 }
 
 // Generate unique ID for saved messages
-const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2)
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2)
+}
 
 // Save a new TTS message
-const saveTtsMessage = (message) => {
+function saveTtsMessage(message) {
   if (!message || !message.trim()) {
     alert('Please enter a message')
     return
   }
-  
+
   const newMessage = {
     id: generateId(),
     message: message.trim(),
-    autoSend: false
+    autoSend: false,
   }
-  
+
   savedMessages.push(newMessage)
   StorageRepo.setSavedMessages(savedMessages)
   renderSavedMessages()
 }
 
 // Delete a saved message
-const deleteSavedMessage = (id) => {
+function deleteSavedMessage(id) {
   savedMessages = savedMessages.filter(m => m.id !== id)
   if (autoSendMessageId === id) {
     autoSendMessageId = null
@@ -1759,16 +1783,16 @@ const deleteSavedMessage = (id) => {
 }
 
 // Toggle auto-send for a saved message
-const toggleSavedMessageAutoSend = (id) => {
+function toggleSavedMessageAutoSend(id) {
   if (autoSendMessageId === id) {
     // Disable auto-send
     autoSendMessageId = null
-    savedMessages.forEach(m => m.autoSend = false)
+    savedMessages.forEach(m => (m.autoSend = false))
   } else {
     // Enable auto-send for this message, disable others
     autoSendMessageId = id
     savedMessages.forEach(m => {
-      m.autoSend = (m.id === id)
+      m.autoSend = m.id === id
     })
     // Disable random TTS auto-send
     autoSendTts = false
@@ -1776,10 +1800,10 @@ const toggleSavedMessageAutoSend = (id) => {
     if (toggle) toggle.checked = false
     saveConfig()
   }
-  
+
   StorageRepo.setSavedMessages(savedMessages)
   renderSavedMessages()
-  
+
   // Start auto-send check if enabled
   if (autoSendMessageId) {
     checkAndAutoSendTts()
@@ -1787,40 +1811,49 @@ const toggleSavedMessageAutoSend = (id) => {
 }
 
 // Send a saved message
-const sendSavedMessage = (message) => {
+function sendSavedMessage(message) {
   // Unescape the message if needed
   const unescapedMessage = message.replace(/\\'/g, "'").replace(/\\"/g, '"')
   sendMessage(unescapedMessage)
 }
 
 // Combo send (send twice with confirmation)
-const comboSendSavedMessage = (message) => {
-  if (!confirm('⚠️ WARNING: This will send the message TWICE. You might get timed out by moderators. Continue?')) {
+function comboSendSavedMessage(message) {
+  if (
+    !confirm(
+      '⚠️ WARNING: This will send the message TWICE. You might get timed out by moderators. Continue?'
+    )
+  ) {
     return
   }
-  
+
   // Unescape the message if needed
   const unescapedMessage = message.replace(/\\'/g, "'").replace(/\\"/g, '"')
   sendMessage(unescapedMessage)
-  setTimeout(() => {
-    sendMessage(unescapedMessage)
-  }, 1000) // 1 second delay between sends
+  sendMessage(unescapedMessage)
 }
 
 // Render saved messages section
-const renderSavedMessages = () => {
+function renderSavedMessages() {
   const container = document.getElementById('saved-messages-list')
   if (!container) return
-  
+
   if (savedMessages.length === 0) {
     container.innerHTML = '<div class="empty-state">No saved messages</div>'
     return
   }
-  
-  container.innerHTML = savedMessages.map(msg => {
-    const escapedMessage = msg.message.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')
-    const htmlEscapedMessage = msg.message.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    return `
+
+  container.innerHTML = savedMessages
+    .map(msg => {
+      const escapedMessage = msg.message
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+      const htmlEscapedMessage = msg.message
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+      return `
     <div class="saved-message-item">
       <div class="saved-message-content">
         <input type="text" class="saved-message-input" value="${htmlEscapedMessage}" 
@@ -1829,7 +1862,9 @@ const renderSavedMessages = () => {
       <div class="saved-message-actions">
         <button class="saved-message-btn ${msg.autoSend ? 'active' : ''}" 
                 onclick="toggleSavedMessageAutoSend('${msg.id}')" 
-                title="${msg.autoSend ? 'Disable auto-send' : 'Enable auto-send'}">
+                title="${
+                  msg.autoSend ? 'Disable auto-send' : 'Enable auto-send'
+                }">
           ${msg.autoSend ? '✓ Auto' : 'Auto'}
         </button>
         <button class="saved-message-btn" onclick="sendSavedMessage('${escapedMessage}')" title="Send once">
@@ -1838,16 +1873,20 @@ const renderSavedMessages = () => {
         <button class="saved-message-btn combo-btn" onclick="comboSendSavedMessage('${escapedMessage}')" title="Send twice (combo)">
           Combo
         </button>
-        <button class="saved-message-btn delete-btn" onclick="deleteSavedMessage('${msg.id}')" title="Delete">
+        <button class="saved-message-btn delete-btn" onclick="deleteSavedMessage('${
+          msg.id
+        }')" title="Delete">
           ✕
         </button>
       </div>
     </div>
-  `}).join('')
+  `
+    })
+    .join('')
 }
 
 // Update saved message
-const updateSavedMessage = (id, newMessage) => {
+function updateSavedMessage(id, newMessage) {
   const msg = savedMessages.find(m => m.id === id)
   if (msg) {
     msg.message = newMessage.trim()
@@ -1855,71 +1894,73 @@ const updateSavedMessage = (id, newMessage) => {
   }
 }
 
-// Render TTS history
-const renderTtsHistory = () => {
-  const container = document.getElementById('tts-history-list')
+// Shared history rendering function
+function renderHistory(containerId, history, showSaveButton = false) {
+  const container = document.getElementById(containerId)
   if (!container) return
-  
-  const history = StorageRepo.getTtsHistory()
-  
+
   if (history.length === 0) {
-    container.innerHTML = '<div class="empty-state">No TTS history</div>'
+    const emptyText =
+      containerId === 'tts-history-list'
+        ? 'No TTS history'
+        : 'No song request history'
+    container.innerHTML = `<div class="empty-state">${emptyText}</div>`
     return
   }
-  
-  container.innerHTML = history.slice(0, 20).map(item => {
-    const escapedMessage = item.message.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const htmlEscapedMessage = item.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    return `
+
+  container.innerHTML = history
+    .slice(0, HISTORY_DISPLAY_LIMIT)
+    .map(item => {
+      const escapedMessage = item.message
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+      const htmlEscapedMessage = item.message
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+
+      const saveButton = showSaveButton
+        ? `<button class="history-btn" onclick="saveTtsMessage('${escapedMessage}')">Save</button>`
+        : ''
+
+      return `
     <div class="history-item">
       <div class="history-message">${htmlEscapedMessage}</div>
       <div class="history-actions">
         <button class="history-btn" onclick="sendSavedMessage('${escapedMessage}')">Send</button>
-        <button class="history-btn" onclick="saveTtsMessage('${escapedMessage}')">Save</button>
+        ${saveButton}
       </div>
     </div>
-  `}).join('')
+  `
+    })
+    .join('')
+}
+
+// Render TTS history
+function renderTtsHistory() {
+  const history = StorageRepo.getTtsHistory()
+  renderHistory('tts-history-list', history, true)
 }
 
 // Render SR history
-const renderSrHistory = () => {
-  const container = document.getElementById('sr-history-list')
-  if (!container) return
-  
+function renderSrHistory() {
   const history = StorageRepo.getSrHistory()
-  
-  if (history.length === 0) {
-    container.innerHTML = '<div class="empty-state">No song request history</div>'
-    return
-  }
-  
-  container.innerHTML = history.slice(0, 20).map(item => {
-    const escapedMessage = item.message.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const htmlEscapedMessage = item.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    return `
-    <div class="history-item">
-      <div class="history-message">${htmlEscapedMessage}</div>
-      <div class="history-actions">
-        <button class="history-btn" onclick="sendSavedMessage('${escapedMessage}')">Send</button>
-      </div>
-    </div>
-  `}).join('')
+  renderHistory('sr-history-list', history, false)
 }
 
 // Function to fill Kick's message input
-const fillKickMessageInput = (message) => {
+function fillKickMessageInput(message) {
   const messageInput = document.querySelector('[data-testid="chat-input"]')
   if (!messageInput) {
     console.warn('Kick message input not found')
     return false
   }
-  
+
   // Focus the input first
   messageInput.focus()
-  
+
   // Try to set text content directly
   messageInput.textContent = message
-  
+
   // Also try innerHTML for Lexical editor
   const paragraph = messageInput.querySelector('.editor-paragraph')
   if (paragraph) {
@@ -1927,13 +1968,15 @@ const fillKickMessageInput = (message) => {
   } else {
     messageInput.innerHTML = `<p class="editor-paragraph">${message}</p>`
   }
-  
+
   // Trigger various events to make Kick recognize the change
   const events = ['input', 'change', 'keyup', 'keydown', 'paste']
   events.forEach(eventType => {
-    messageInput.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }))
+    messageInput.dispatchEvent(
+      new Event(eventType, { bubbles: true, cancelable: true })
+    )
   })
-  
+
   // Try to trigger Lexical update if available
   if (window.LexicalEditor && messageInput.__lexicalEditor) {
     const editor = messageInput.__lexicalEditor
@@ -1944,42 +1987,49 @@ const fillKickMessageInput = (message) => {
       }
     })
   }
-  
+
   return true
 }
 
 // Find Kick message box placeholder
-const findKickPlaceholder = () => {
+function findKickPlaceholder() {
   // Find the message input container
   const messageInput = document.querySelector('[data-testid="chat-input"]')
   if (!messageInput) return null
-  
+
   // Look for the placeholder div in the relative container
-  const container = messageInput.closest('.relative') || messageInput.parentElement
+  const container =
+    messageInput.closest('.relative') || messageInput.parentElement
   if (!container) return null
-  
+
   // Use the exact selector: div with pointer-events-none and absolute classes
-  const placeholder = container.querySelector('div.pointer-events-none.absolute')
-  
+  const placeholder = container.querySelector(
+    'div.pointer-events-none.absolute'
+  )
+
   // Verify it's the right one by checking if it contains "Send" or "message" or cooldown info
-  if (placeholder && (
-    placeholder.textContent.includes('Send') || 
-    placeholder.textContent.includes('message') ||
-    placeholder.textContent.includes('TTS') ||
-    placeholder.textContent.includes('SR')
-  )) {
+  if (
+    placeholder &&
+    (placeholder.textContent.includes('Send') ||
+      placeholder.textContent.includes('message') ||
+      placeholder.textContent.includes('TTS') ||
+      placeholder.textContent.includes('SR'))
+  ) {
     return placeholder
   }
-  
+
   // Fallback: search by text content
   const placeholderByText = Array.from(container.querySelectorAll('div')).find(
-    el => el.textContent.trim() === 'Send a message' || el.textContent.includes('TTS') || el.textContent.includes('SR')
+    el =>
+      el.textContent.trim() === 'Send a message' ||
+      el.textContent.includes('TTS') ||
+      el.textContent.includes('SR')
   )
   return placeholderByText || null
 }
 
 // Format time remaining as MM:SS
-const formatTimeRemaining = (timeRemaining) => {
+function formatTimeRemaining(timeRemaining) {
   const seconds = Math.ceil(timeRemaining / 1000)
   const minutes = Math.floor(seconds / 60)
   const secs = seconds % 60
@@ -1987,15 +2037,22 @@ const formatTimeRemaining = (timeRemaining) => {
 }
 
 // Update cooldown display (both TTS and SR)
-const updateCooldownDisplay = () => {
+let cooldownTimerId = null
+
+function updateCooldownDisplay() {
   const ttsCooldownDiv = document.getElementById('tts-cooldown')
   const srCooldownDiv = document.getElementById('sr-cooldown')
   const kickPlaceholder = findKickPlaceholder()
-  
-  const updateTimer = () => {
+
+  // Clear existing timer to prevent memory leak
+  if (cooldownTimerId) {
+    clearTimeout(cooldownTimerId)
+  }
+
+  function updateTimer() {
     const ttsTimeRemaining = ttsCooldownEndTime - Date.now()
     const srTimeRemaining = srCooldownEndTime - Date.now()
-    
+
     // Update TTS cooldown
     if (ttsTimeRemaining > 0) {
       const ttsText = `TTS: ${formatTimeRemaining(ttsTimeRemaining)}`
@@ -2015,7 +2072,7 @@ const updateCooldownDisplay = () => {
         checkAndAutoSendTts()
       }
     }
-    
+
     // Update SR cooldown
     if (srTimeRemaining > 0) {
       const srText = `SR: ${formatTimeRemaining(srTimeRemaining)}`
@@ -2031,7 +2088,7 @@ const updateCooldownDisplay = () => {
         srCooldownDiv.style.display = 'none'
       }
     }
-    
+
     // Update Kick message box placeholder with combined cooldown info
     if (kickPlaceholder) {
       const cooldowns = []
@@ -2041,7 +2098,7 @@ const updateCooldownDisplay = () => {
       if (srTimeRemaining > 0) {
         cooldowns.push(`SR: ${formatTimeRemaining(srTimeRemaining)}`)
       }
-      
+
       if (cooldowns.length > 0) {
         kickPlaceholder.textContent = cooldowns.join(' | ')
         kickPlaceholder.style.color = '#ff6464'
@@ -2050,43 +2107,50 @@ const updateCooldownDisplay = () => {
         kickPlaceholder.style.color = ''
       }
     }
-    
-    setTimeout(updateTimer, 1000)
+
+    cooldownTimerId = setTimeout(updateTimer, 1000)
   }
-  
+
   updateTimer()
 }
 
 // Track if we've already intercepted to avoid multiple listeners
 let messageBoxIntercepted = false
+let interceptAttempts = 0
 
 // Intercept Kick's send button (just for updating cooldown, not blocking)
-const interceptKickMessageBox = () => {
+function interceptKickMessageBox() {
   if (messageBoxIntercepted) return
-  
+
   const sendButton = document.getElementById('send-message-button')
   const messageInput = document.querySelector('[data-testid="chat-input"]')
-  
+
   if (!sendButton || !messageInput) {
-    // Retry after a short delay if elements aren't ready
-    setTimeout(interceptKickMessageBox, 500)
+    // Retry with exponential backoff if elements aren't ready
+    if (interceptAttempts < INTERCEPT_MAX_ATTEMPTS) {
+      const delay =
+        INTERCEPT_RETRY_INTERVALS[interceptAttempts] || INTERCEPT_RETRY_DELAY
+      interceptAttempts++
+      setTimeout(interceptKickMessageBox, delay)
+    }
     return
   }
-  
+
   // Mark as intercepted
   messageBoxIntercepted = true
-  
+
   // Initialize placeholder update
   updateCooldownDisplay()
-  
+
   // Function to update cooldowns when sending (but don't block)
-  const updateCooldownsOnSend = () => {
-    const currentContent = messageInput.textContent || messageInput.innerText || ''
-    
+  function updateCooldownsOnSend() {
+    const currentContent =
+      messageInput.textContent || messageInput.innerText || ''
+
     if (!currentContent.trim()) return
-    
+
     const now = Date.now()
-    
+
     // Check if it's a TTS message and update cooldown + history
     if (isTtsMessage(currentContent)) {
       StorageRepo.setLastTtsTimestamp(now)
@@ -2096,7 +2160,7 @@ const interceptKickMessageBox = () => {
       StorageRepo.addTtsHistory(currentContent.trim())
       renderTtsHistory()
     }
-    
+
     // Check if it's a song request and update cooldown + history
     if (isSongRequest(currentContent)) {
       StorageRepo.setLastSrTimestamp(now)
@@ -2107,17 +2171,21 @@ const interceptKickMessageBox = () => {
       renderSrHistory()
     }
   }
-  
+
   // Listen for send button click to update cooldown
   sendButton.addEventListener('click', updateCooldownsOnSend, true)
-  
+
   // Also listen for Enter key in the message input
-  messageInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      updateCooldownsOnSend()
-    }
-  }, true)
-  
+  messageInput.addEventListener(
+    'keydown',
+    e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        updateCooldownsOnSend()
+      }
+    },
+    true
+  )
+
   console.log('Kick message box intercepted successfully')
 }
 
@@ -2128,17 +2196,12 @@ if (document.readyState === 'loading') {
   interceptKickMessageBox()
 }
 
-// Also try to intercept after delays in case elements load later
-setTimeout(interceptKickMessageBox, 1000)
-setTimeout(interceptKickMessageBox, 3000)
-setTimeout(interceptKickMessageBox, 5000)
-
 // Periodically try to find and update the placeholder (in case it loads later)
 setInterval(() => {
   const ttsTimeRemaining = ttsCooldownEndTime - Date.now()
   const srTimeRemaining = srCooldownEndTime - Date.now()
   const kickPlaceholder = findKickPlaceholder()
-  
+
   if (kickPlaceholder) {
     const cooldowns = []
     if (ttsTimeRemaining > 0) {
@@ -2147,7 +2210,7 @@ setInterval(() => {
     if (srTimeRemaining > 0) {
       cooldowns.push(`SR: ${formatTimeRemaining(srTimeRemaining)}`)
     }
-    
+
     if (cooldowns.length > 0) {
       kickPlaceholder.textContent = cooldowns.join(' | ')
       kickPlaceholder.style.color = '#ff6464'
@@ -2156,11 +2219,17 @@ setInterval(() => {
       kickPlaceholder.style.color = ''
     }
   }
-}, 2000)
+}, PLACEHOLDER_UPDATE_INTERVAL)
 
-  const emoteFlashbang = () => {
-  const selectedEmoteName = document.getElementById('selectedemote').value
-  
+function emoteFlashbang() {
+  const selectedEmoteInput = document.getElementById('selectedemote')
+  const emoteAmountInput = document.getElementById('emoteamount')
+  const messageAmountInput = document.getElementById('messageamount')
+
+  if (!selectedEmoteInput || !emoteAmountInput || !messageAmountInput) return
+
+  const selectedEmoteName = selectedEmoteInput.value
+
   if (selectedEmoteName === '') {
     alert('Please select an emote')
     return
@@ -2171,12 +2240,12 @@ setInterval(() => {
     return
   }
 
-  if (document.getElementById('emoteamount').value === '') {
+  if (emoteAmountInput.value === '') {
     alert('Please enter an amount')
     return
   }
 
-  if (document.getElementById('messageamount').value === '') {
+  if (messageAmountInput.value === '') {
     alert('Please enter an amount')
     return
   }
@@ -2185,9 +2254,8 @@ setInterval(() => {
 
   const emoteText = `[emote:${emote.id}:${emote.name}] `
 
-  const emoteAmount = document.getElementById('emoteamount').value
-
-  const messageAmount = document.getElementById('messageamount').value
+  const emoteAmount = parseInt(emoteAmountInput.value)
+  const messageAmount = parseInt(messageAmountInput.value)
 
   for (let i = 0; i < messageAmount; i++) {
     sendMessage(emoteText.repeat(emoteAmount))
@@ -2195,16 +2263,12 @@ setInterval(() => {
   }
 }
 
-// function onlyUnique(value, index, array) {
-//   return array.indexOf(value) === index
-// }
-
-const collectWords = data => {
+function collectWords(data) {
   // Exclude messages from KickBot and BotRix
   if (data.sender.username === 'KickBot' || data.sender.username === 'BotRix') {
     return
   }
-  
+
   if (
     data.content.match(/emote:/gm) === null &&
     data.sender.username !== username
@@ -2222,34 +2286,40 @@ const collectWords = data => {
 const p = ['!', '?', '.']
 
 // Helper function to check if a word contains a URL
-const containsUrl = (word) => {
-  const urlPattern = /(https?:\/\/|www\.|\.com|\.net|\.org|\.io|\.gg|\.tv|\.co|\.xyz)/i
+function containsUrl(word) {
+  const urlPattern =
+    /(https?:\/\/|www\.|\.com|\.net|\.org|\.io|\.gg|\.tv|\.co|\.xyz)/i
   return urlPattern.test(word)
 }
 
 // Helper function to get filtered words
-const getFilteredWords = () => {
+function getFilteredWords() {
   if (!words || words.length === 0) return []
-  
+
   return words
     .map(w => w[1])
-    .filter(w => w && typeof w === 'string')
-    .filter(w => w.match(/^\!/gm) === null)
-    .filter(w => w.match(/^v=/gm) === null)
-    .filter(w => w.match(/"/gm) === null)
-    .filter(w => w.match(/^\(/gm) === null)
-    .filter(w => w.match(/\d+s\.$/gm) === null)
-    .filter(w => w.match(/\d+m$/gm) === null)
-    .filter(w => w.match(/\)$/gm) === null)
-    .filter(w => w.match(/^#/gm) === null)
-    .filter(w => w.match(/^@/gm) === null)
-    .filter(w => !containsUrl(w))
+    .filter(w => {
+      if (!w || typeof w !== 'string') return false
+      // Combine all filters into one for better performance
+      return (
+        w.match(/^\!/gm) === null &&
+        w.match(/^v=/gm) === null &&
+        w.match(/"/gm) === null &&
+        w.match(/^\(/gm) === null &&
+        w.match(/\d+s\.$/gm) === null &&
+        w.match(/\d+m$/gm) === null &&
+        w.match(/\)$/gm) === null &&
+        w.match(/^#/gm) === null &&
+        w.match(/^@/gm) === null &&
+        !containsUrl(w)
+      )
+    })
 }
 
-const sendRandomTts = () => {
+function sendRandomTts() {
   const onlyWords = getFilteredWords()
 
-  if (onlyWords.length < 10) {
+  if (onlyWords.length < MIN_WORDS_REQUIRED) {
     alert('Not enough valid words collected yet')
     return
   }
@@ -2262,17 +2332,15 @@ const sendRandomTts = () => {
   const shuffled = onlyWords.sort(() => 0.5 - Math.random())
   const selected = shuffled.slice(0, Math.min(maxWords, shuffled.length))
 
-  // Filter out URLs from selected words
-  const selectedWithoutUrls = selected.filter(w => !containsUrl(w))
-  
-  if (selectedWithoutUrls.length === 0) {
-    alert('No valid words available after filtering URLs')
+  if (selected.length === 0) {
+    alert('No valid words available')
     return
   }
 
-  const voice = selectedVoice === 'random' 
-    ? availableVoices[Math.floor(Math.random() * availableVoices.length)]
-    : selectedVoice
+  const voice =
+    selectedVoice === 'random'
+      ? availableVoices[Math.floor(Math.random() * availableVoices.length)]
+      : selectedVoice
 
   const message = `!${voice} ${selectedWithoutUrls.join(' ')}${
     p[Math.floor(Math.random() * p.length)]
@@ -2283,10 +2351,10 @@ const sendRandomTts = () => {
 
   // Preview in Kick's message input
   fillKickMessageInput(message)
-  
+
   // Update preview display
   updateTtsPreviewInfo(selectedWithoutUrls, voice, message)
-  
+
   // Show the Send button
   const sendBtn = document.getElementById('send-tts-btn')
   if (sendBtn) {
@@ -2295,44 +2363,45 @@ const sendRandomTts = () => {
 }
 
 // Send the current TTS message
-const sendTtsMessage = () => {
+function sendTtsMessage() {
   if (!currentTtsMessage) {
     alert('No TTS message to send. Please generate one first.')
     return
   }
-  
+
   // Don't block, just send (cooldown is displayed but doesn't prevent sending)
   sendMessage(currentTtsMessage)
-  
+
   // Hide the Send button
   const sendBtn = document.getElementById('send-tts-btn')
   if (sendBtn) {
     sendBtn.style.display = 'none'
   }
-  
+
   // Clear the preview
   currentTtsMessage = ''
   const infoDiv = document.getElementById('tts-preview-info')
   if (infoDiv) {
-    infoDiv.innerHTML = '<div class="tts-info-placeholder">Generate a TTS message to see preview</div>'
+    infoDiv.innerHTML =
+      '<div class="tts-info-placeholder">Generate a TTS message to see preview</div>'
   }
 }
 
 // Update TTS preview information display
-const updateTtsPreviewInfo = (selectedWords, voice, message) => {
+function updateTtsPreviewInfo(selectedWords, voice, message) {
   const infoDiv = document.getElementById('tts-preview-info')
   if (!infoDiv) return
-  
+
   const uniqueWords = [...new Set(selectedWords)]
   const wordCount = selectedWords.length
-  
+
   // Escape HTML to prevent XSS and show full message
-  const escapeHtml = (text) => {
+  const escapeHtml = text => {
     const div = document.createElement('div')
     div.textContent = text
     return div.innerHTML
   }
-  
+
   infoDiv.style.display = 'block'
   infoDiv.innerHTML = `
     <div class="tts-preview-header">
@@ -2346,18 +2415,22 @@ const updateTtsPreviewInfo = (selectedWords, voice, message) => {
       </div>
       <div class="tts-info-row">
         <span class="tts-info-label">Words:</span>
-        <span class="tts-info-value">${wordCount} (${uniqueWords.length} unique)</span>
+        <span class="tts-info-value">${wordCount} (${
+    uniqueWords.length
+  } unique)</span>
       </div>
       <div class="tts-info-row" style="flex-direction: column; align-items: flex-start; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
         <span class="tts-info-label" style="margin-bottom: 8px; font-size: 14px;">Message:</span>
-        <span class="tts-info-value tts-message-preview">${escapeHtml(message)}</span>
+        <span class="tts-info-value tts-message-preview">${escapeHtml(
+          message
+        )}</span>
       </div>
     </div>
   `
 }
 
 setInterval(() => {
-  words = words.filter(w => w[0] >= Date.now() - 200000)
+  words = words.filter(w => w[0] >= Date.now() - WORD_RETENTION_MS)
 
   // Update words count display
   const wordsCountEl = document.getElementById('words-count')
@@ -2380,6 +2453,6 @@ setInterval(() => {
       .filter(w => w.match(/^#/gm) === null)
       .filter(w => w.match(/^@/gm) === null)
   )
-}, 10000)
+}, WORDS_CLEANUP_INTERVAL)
 
 channel.bind(messageEvent, collectWords)
